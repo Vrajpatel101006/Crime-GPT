@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Combo 1: 3D Tilt + Matrix Rain + Fingerprint Scan</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;font-family:'Inter',sans-serif;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#F0F4F8}
+canvas#matrix{position:fixed;inset:0;z-index:0}
+.scanlines{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,0.12) 0,rgba(0,0,0,0.12) 1px,transparent 1px,transparent 3px);z-index:1;opacity:.5}
+.perspective-wrap{perspective:1200px;z-index:10;position:relative}
+.card{width:430px;padding:44px 40px;background:rgba(10,22,40,0.84);backdrop-filter:blur(24px) saturate(1.4);border:1px solid rgba(201,168,76,0.22);border-radius:24px;box-shadow:0 24px 64px rgba(0,0,0,.8),0 0 24px rgba(201,168,76,.18);transform-style:preserve-3d;transition:box-shadow .3s}
+.gh{text-align:center;margin-bottom:6px}
+.gh .hi{font-family:'JetBrains Mono',monospace;font-size:11px;color:#C9A84C;letter-spacing:.18em;font-weight:600;opacity:.85}
+.gh .dp{font-size:10px;color:#5E6E80;letter-spacing:.12em;margin-top:2px}
+.shield{width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,#C9A84C,#E8C96A);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;box-shadow:0 0 30px rgba(201,168,76,.3);animation:gp 2.5s ease-in-out infinite}
+@keyframes gp{0%,100%{box-shadow:0 0 20px rgba(201,168,76,.3)}50%{box-shadow:0 0 50px rgba(201,168,76,.5),0 0 80px rgba(201,168,76,.12)}}
+.shield svg{width:30px;height:30px;stroke:#0A1628;stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+h1{text-align:center;font-size:26px;font-weight:900;background:linear-gradient(135deg,#E8C96A,#00D4FF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px;letter-spacing:-.01em}
+.sub{text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:#5E6E80;letter-spacing:.04em;margin-bottom:24px}
+.sec-badge{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);margin-bottom:22px}
+.sec-badge svg{width:17px;height:17px;stroke:#E8C96A;stroke-width:2;fill:none;flex-shrink:0}
+.sec-badge span{font-size:11px;color:#8899AA;font-family:'JetBrains Mono',monospace;letter-spacing:.02em}
+.fg{margin-bottom:16px}
+.fg label{display:block;font-size:10px;font-weight:600;color:#C9A84C;opacity:.8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.input-wrap{position:relative}
+.input-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:#C9A84C;opacity:.5;stroke-width:2;fill:none}
+.input-wrap input,.input-wrap select{width:100%;padding:11px 14px 11px 38px;background:rgba(0,0,0,.45);border:1px solid rgba(201,168,76,.18);border-radius:10px;color:#F0F4F8;font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+.input-wrap input:focus,.input-wrap select:focus{border-color:#C9A84C;box-shadow:0 0 0 3px rgba(201,168,76,.18)}
+.input-wrap input::placeholder{color:#5E6E80}
+.input-wrap select{appearance:none;cursor:pointer}
+.chev{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:#C9A84C;opacity:.5;stroke-width:2;fill:none;pointer-events:none}
+.btn{width:100%;padding:14px;border:none;border-radius:10px;background:linear-gradient(135deg,#C9A84C,#E8C96A 50%,#00D4FF);color:#0A1628;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.03em;cursor:pointer;position:relative;overflow:hidden;transition:transform .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:scale(.97)}
+/* Fingerprint overlay */
+.fp-overlay{position:absolute;inset:0;background:rgba(10,22,40,0.95);border-radius:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s}
+.fp-overlay.active{opacity:1;pointer-events:auto}
+.fp-rings{position:relative;width:100px;height:100px}
+.fp-ring{position:absolute;inset:0;border:2px solid rgba(201,168,76,.3);border-radius:50%;animation:fpPulse 1.5s ease-in-out infinite}
+.fp-ring:nth-child(2){inset:10px;animation-delay:.2s;border-color:rgba(201,168,76,.5)}
+.fp-ring:nth-child(3){inset:20px;animation-delay:.4s;border-color:rgba(201,168,76,.7)}
+.fp-ring:nth-child(4){inset:30px;animation-delay:.6s;border-color:#C9A84C}
+@keyframes fpPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.08);opacity:.6}}
+.fp-scan{position:absolute;left:15%;right:15%;height:2px;background:linear-gradient(90deg,transparent,#00FF41,transparent);animation:fpScan 1.2s ease-in-out infinite;box-shadow:0 0 12px rgba(0,255,65,.5)}
+@keyframes fpScan{0%,100%{top:20%}50%{top:75%}}
+.fp-text{margin-top:20px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#C9A84C;letter-spacing:.08em}
+/* Access granted */
+.granted{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.9);opacity:0;pointer-events:none;transition:opacity .4s}
+.granted.show{opacity:1;pointer-events:auto}
+.granted-box{text-align:center}
+.granted-box h2{font-size:32px;font-weight:900;color:#00FF41;font-family:'JetBrains Mono',monospace;text-shadow:0 0 30px rgba(0,255,65,.5);letter-spacing:.08em}
+.granted-box p{font-size:12px;color:#5E6E80;margin-top:8px;font-family:'JetBrains Mono',monospace}
+.hint{position:fixed;bottom:16px;right:16px;font-size:10px;color:#2a4a2a;font-family:'JetBrains Mono',monospace;z-index:50}
+.label-tag{position:fixed;top:16px;left:16px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9A84C;letter-spacing:.1em;z-index:50;opacity:.7}
+</style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+<div class="scanlines"></div>
+<div class="label-tag">COMBO 1: 3D Tilt + Matrix Rain + Fingerprint Scan</div>
+
+<div class="perspective-wrap" id="pwrap">
+  <div class="card" id="card">
+    <div class="gh">
+      <div class="hi">सत्यमेव जयते</div>
+      <div class="dp">GOVERNMENT OF GUJARAT • HOME DEPARTMENT</div>
+    </div>
+    <div class="shield"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+    <h1>CrimeGPT 2.0</h1>
+    <div class="sub">Gujarat Police • Cyber Crime Division</div>
+    <div class="sec-badge">
+      <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 00-5 5v3H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2v-8a2 2 0 00-2-2h-2V7a5 5 0 00-5-5zm-3 8V7a3 3 0 016 0v3H9z"/></svg>
+      <span>Secured Portal • JWT Auth • AES-256 Encryption</span>
+    </div>
+    <div class="fg"><label>Official Email</label><div class="input-wrap"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg><input type="email" placeholder="officer@gujpol.gov.in" value="inspector.rathod@gujpol.gov.in"></div></div>
+    <div class="fg"><label>Password</label><div class="input-wrap"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg><input type="password" placeholder="Enter password" value="demo1234"></div></div>
+    <div class="fg"><label>Login As</label><div class="input-wrap"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><select><option>Investigation Officer</option><option>Station House Officer</option><option>Legal Advisor</option><option>Administrator</option></select><svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <button class="btn" id="signinBtn" onclick="startFingerprint()">SIGN IN SECURELY</button>
+    <div class="fp-overlay" id="fpOverlay">
+      <div class="fp-rings"><div class="fp-ring"></div><div class="fp-ring"></div><div class="fp-ring"></div><div class="fp-ring"></div><div class="fp-scan"></div></div>
+      <div class="fp-text" id="fpText">SCANNING BIOMETRIC...</div>
+    </div>
+  </div>
+</div>
+
+<div class="granted" id="grantedScreen">
+  <div class="granted-box">
+    <h2>&#10003; ACCESS GRANTED</h2>
+    <p>Welcome, Inspector Rathod • Badge GJ-2024-0847</p>
+    <p style="margin-top:16px;color:#C9A84C">Redirecting to Investigation Dashboard...</p>
+  </div>
+</div>
+
+<div class="hint">Refresh to replay • Standalone demo — safe to delete</div>
+
+<script>
+// === 3D TILT ===
+const card=document.getElementById('card'),wrap=document.getElementById('pwrap');
+let mx=0,my=0,cx=0,cy=0;
+document.addEventListener('mousemove',e=>{
+  const r=wrap.getBoundingClientRect();
+  mx=(e.clientX-r.left-r.width/2)/(r.width/2);
+  my=(e.clientY-r.top-r.height/2)/(r.height/2);
+});
+document.addEventListener('mouseleave',()=>{mx=0;my=0});
+function animateTilt(){
+  cx+=(mx-cx)*.08;cy+=(my-cy)*.08;
+  card.style.transform=`rotateY(${cx*12}deg) rotateX(${-cy*12}deg) scale3d(1.02,1.02,1.02)`;
+  requestAnimationFrame(animateTilt);
+}
+animateTilt();
+
+// === MATRIX RAIN ===
+const canvas=document.getElementById('matrix'),ctx=canvas.getContext('2d');
+const chars='01アイウエオカキクケコサシスセソ';
+let cols,drops;
+function initMatrix(){
+  canvas.width=window.innerWidth;canvas.height=window.innerHeight;
+  cols=Math.floor(canvas.width/16);
+  drops=Array.from({length:cols},()=>({y:Math.random()*-canvas.height,speed:.5+Math.random()*1.5,opacity:.05+Math.random()*.5,size:12+Math.random()*5}));
+}
+initMatrix();
+window.addEventListener('resize',initMatrix);
+function drawMatrix(){
+  ctx.fillStyle='rgba(0,0,0,0.06)';ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let i=0;i<cols;i++){
+    const d=drops[i],ch=chars[Math.floor(Math.random()*chars.length)];
+    ctx.font=d.size+'px JetBrains Mono,monospace';
+    ctx.shadowColor='#00FF41';ctx.shadowBlur=6;
+    ctx.fillStyle='rgba(255,255,255,'+(.7*d.opacity)+')';
+    ctx.fillText(ch,i*16,d.y);
+    ctx.shadowBlur=0;ctx.fillStyle='rgba(0,255,65,'+d.opacity*.6+')';
+    for(let j=1;j<12;j++){
+      const c2=chars[Math.floor(Math.random()*chars.length)];
+      ctx.fillText(c2,i*16,d.y-j*d.size);
+    }
+    d.y+=d.speed*1.2;
+    if(d.y-12*d.size>canvas.height){d.y=Math.random()*-200;d.speed=.5+Math.random()*1.5}
+  }
+  requestAnimationFrame(drawMatrix);
+}
+drawMatrix();
+
+// === FINGERPRINT SCAN ===
+function startFingerprint(){
+  const ov=document.getElementById('fpOverlay'),txt=document.getElementById('fpText');
+  ov.classList.add('active');
+  const steps=['SCANNING BIOMETRIC...','VERIFYING IDENTITY...','CHECKING CLEARANCE LEVEL...','AUTHENTICATING...','ACCESS GRANTED ✓'];
+  let i=0;
+  const iv=setInterval(()=>{
+    i++;if(i<steps.length){txt.textContent=steps[i]}
+    if(i>=steps.length-1){
+      clearInterval(iv);
+      setTimeout(()=>{
+        ov.classList.remove('active');
+        document.getElementById('grantedScreen').classList.add('show');
+        setTimeout(()=>{document.getElementById('grantedScreen').classList.remove('show')},3000);
+      },600);
+    }
+  },700);
+}
+</script>
+</body>
+</html>

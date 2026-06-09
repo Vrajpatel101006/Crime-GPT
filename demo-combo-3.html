@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Combo 3: Shield Animation + 3D Tilt + Hex Stream</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;font-family:'Inter',sans-serif;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#F0F4F8}
+canvas#matrix{position:fixed;inset:0;z-index:0}
+.scanlines{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.12) 0,rgba(0,0,0,.12) 1px,transparent 1px,transparent 3px);z-index:1;opacity:.5}
+/* Hex stream sidebar */
+.hex-stream{position:fixed;left:0;top:0;bottom:0;width:180px;z-index:5;overflow:hidden;pointer-events:none;background:linear-gradient(90deg,rgba(0,0,0,.85) 0%,rgba(0,0,0,.4) 70%,transparent 100%);padding:20px 12px}
+.hex-stream-right{position:fixed;right:0;top:0;bottom:0;width:180px;z-index:5;overflow:hidden;pointer-events:none;background:linear-gradient(-90deg,rgba(0,0,0,.85) 0%,rgba(0,0,0,.4) 70%,transparent 100%);padding:20px 12px}
+.hex-line{font-family:'JetBrains Mono',monospace;font-size:9px;color:#00FF41;opacity:.4;white-space:nowrap;margin-bottom:3px;animation:hexFade 4s ease-out forwards}
+.hex-line.flash{color:#C9A84C;opacity:.8;font-weight:600}
+@keyframes hexFade{0%{opacity:.8}100%{opacity:.15}}
+/* Perspective */
+.perspective-wrap{perspective:1200px;z-index:10;position:relative}
+.card{width:430px;padding:44px 40px;background:rgba(10,22,40,.84);backdrop-filter:blur(24px) saturate(1.4);border:1px solid rgba(201,168,76,.22);border-radius:24px;box-shadow:0 24px 64px rgba(0,0,0,.8),0 0 24px rgba(201,168,76,.18);transform-style:preserve-3d;transition:box-shadow .3s}
+.gh{text-align:center;margin-bottom:6px}
+.gh .hi{font-family:'JetBrains Mono',monospace;font-size:11px;color:#C9A84C;letter-spacing:.18em;font-weight:600;opacity:.85}
+.gh .dp{font-size:10px;color:#5E6E80;letter-spacing:.12em;margin-top:2px}
+/* Animated Shield */
+.shield-container{position:relative;width:100px;height:100px;margin:0 auto 16px}
+.shield-orbit{position:absolute;inset:-10px;border:1px solid rgba(201,168,76,.15);border-radius:50%;animation:orbitSpin 8s linear infinite}
+.shield-orbit::after{content:'';position:absolute;top:-3px;left:50%;width:6px;height:6px;background:#C9A84C;border-radius:50%;box-shadow:0 0 8px rgba(201,168,76,.6);transform:translateX(-50%)}
+.shield-orbit-2{position:absolute;inset:-20px;border:1px dashed rgba(0,212,255,.1);border-radius:50%;animation:orbitSpin 12s linear infinite reverse}
+.shield-orbit-2::after{content:'';position:absolute;bottom:-3px;left:50%;width:4px;height:4px;background:#00D4FF;border-radius:50%;box-shadow:0 0 8px rgba(0,212,255,.6);transform:translateX(-50%)}
+@keyframes orbitSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.shield-pulse{position:absolute;inset:5px;border-radius:50%;border:2px solid rgba(201,168,76,.2);animation:shieldPulse 2s ease-in-out infinite}
+.shield-pulse:nth-child(4){animation-delay:.5s}
+.shield-pulse:nth-child(5){animation-delay:1s}
+@keyframes shieldPulse{0%,100%{transform:scale(1);opacity:.6}50%{transform:scale(1.3);opacity:0}}
+.shield-core{position:absolute;inset:15px;border-radius:50%;background:linear-gradient(135deg,#C9A84C,#E8C96A);display:flex;align-items:center;justify-content:center;box-shadow:0 0 30px rgba(201,168,76,.4),inset 0 -2px 6px rgba(0,0,0,.2);animation:coreFloat 3s ease-in-out infinite}
+@keyframes coreFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.shield-core svg{width:30px;height:30px;stroke:#0A1628;stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.shield-particles{position:absolute;inset:-30px;pointer-events:none}
+.particle{position:absolute;width:3px;height:3px;background:#C9A84C;border-radius:50%;opacity:0;animation:particleBurst 3s ease-out infinite}
+.particle:nth-child(1){top:20%;left:10%;animation-delay:0s}
+.particle:nth-child(2){top:50%;left:0%;animation-delay:.5s}
+.particle:nth-child(3){top:80%;left:15%;animation-delay:1s}
+.particle:nth-child(4){top:20%;right:10%;animation-delay:1.5s}
+.particle:nth-child(5){top:50%;right:0%;animation-delay:2s}
+.particle:nth-child(6){top:80%;right:15%;animation-delay:2.5s}
+@keyframes particleBurst{0%{opacity:0;transform:scale(0) translate(0,0)}20%{opacity:.8;transform:scale(1) translate(0,0)}100%{opacity:0;transform:scale(.5) translate(var(--dx,20px),var(--dy,-20px))}}
+.particle:nth-child(1){--dx:-25px;--dy:-15px}
+.particle:nth-child(2){--dx:-30px;--dy:5px}
+.particle:nth-child(3){--dx:-20px;--dy:20px}
+.particle:nth-child(4){--dx:25px;--dy:-15px}
+.particle:nth-child(5){--dx:30px;--dy:5px}
+.particle:nth-child(6){--dx:20px;--dy:20px}
+h1{text-align:center;font-size:26px;font-weight:900;background:linear-gradient(135deg,#E8C96A,#00D4FF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px}
+.sub{text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:#5E6E80;letter-spacing:.04em;margin-bottom:24px}
+.sec-badge{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);margin-bottom:22px}
+.sec-badge svg{width:17px;height:17px;stroke:#E8C96A;stroke-width:2;fill:none;flex-shrink:0}
+.sec-badge span{font-size:11px;color:#8899AA;font-family:'JetBrains Mono',monospace}
+.fg{margin-bottom:16px}
+.fg label{display:block;font-size:10px;font-weight:600;color:#C9A84C;opacity:.8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.iw{position:relative}
+.iw svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:#C9A84C;opacity:.5;stroke-width:2;fill:none}
+.iw input,.iw select{width:100%;padding:11px 14px 11px 38px;background:rgba(0,0,0,.45);border:1px solid rgba(201,168,76,.18);border-radius:10px;color:#F0F4F8;font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+.iw input:focus,.iw select:focus{border-color:#C9A84C;box-shadow:0 0 0 3px rgba(201,168,76,.18)}
+.iw input::placeholder{color:#5E6E80}
+.iw select{appearance:none;cursor:pointer}
+.chev{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:#C9A84C;opacity:.5;stroke-width:2;fill:none;pointer-events:none}
+.btn{width:100%;padding:14px;border:none;border-radius:10px;background:linear-gradient(135deg,#C9A84C,#E8C96A 50%,#00D4FF);color:#0A1628;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.03em;cursor:pointer;transition:transform .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:scale(.97)}
+.hint{position:fixed;bottom:16px;right:16px;font-size:10px;color:#2a4a2a;font-family:'JetBrains Mono',monospace;z-index:50}
+.label-tag{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9A84C;letter-spacing:.1em;z-index:50;opacity:.7}
+</style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+<div class="scanlines"></div>
+<div class="label-tag">COMBO 3: Shield Animation + 3D Tilt + Live Hex Stream</div>
+
+<!-- HEX STREAMS -->
+<div class="hex-stream" id="hexLeft"></div>
+<div class="hex-stream-right" id="hexRight"></div>
+
+<div class="perspective-wrap" id="pwrap">
+  <div class="card" id="card">
+    <div class="gh"><div class="hi">सत्यमेव जयते</div><div class="dp">GOVERNMENT OF GUJARAT • HOME DEPARTMENT</div></div>
+    <!-- ANIMATED SHIELD -->
+    <div class="shield-container">
+      <div class="shield-orbit-2"></div>
+      <div class="shield-orbit"></div>
+      <div class="shield-pulse"></div>
+      <div class="shield-pulse"></div>
+      <div class="shield-pulse"></div>
+      <div class="shield-core"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <div class="shield-particles"><div class="particle"></div><div class="particle"></div><div class="particle"></div><div class="particle"></div><div class="particle"></div><div class="particle"></div></div>
+    </div>
+    <h1>CrimeGPT 2.0</h1>
+    <div class="sub">Gujarat Police • Cyber Crime Division</div>
+    <div class="sec-badge"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 00-5 5v3H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2v-8a2 2 0 00-2-2h-2V7a5 5 0 00-5-5zm-3 8V7a3 3 0 016 0v3H9z"/></svg><span>Secured Portal • JWT Auth • AES-256</span></div>
+    <div class="fg"><label>Official Email</label><div class="iw"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg><input type="email" placeholder="officer@gujpol.gov.in" value="inspector.rathod@gujpol.gov.in"></div></div>
+    <div class="fg"><label>Password</label><div class="iw"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg><input type="password" placeholder="Enter password" value="demo1234"></div></div>
+    <div class="fg"><label>Login As</label><div class="iw"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><select><option>Investigation Officer</option><option>Station House Officer</option></select><svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <button class="btn" onclick="alert('Demo — no actual login')">SIGN IN SECURELY</button>
+  </div>
+</div>
+<div class="hint">Refresh to replay • Standalone demo — safe to delete</div>
+
+<script>
+// === 3D TILT ===
+const card=document.getElementById('card'),wrap=document.getElementById('pwrap');
+let mx=0,my=0,cx=0,cy=0;
+document.addEventListener('mousemove',e=>{const r=wrap.getBoundingClientRect();mx=(e.clientX-r.left-r.width/2)/(r.width/2);my=(e.clientY-r.top-r.height/2)/(r.height/2)});
+document.addEventListener('mouseleave',()=>{mx=0;my=0});
+function animTilt(){cx+=(mx-cx)*.08;cy+=(my-cy)*.08;card.style.transform=`rotateY(${cx*10}deg) rotateX(${-cy*10}deg) scale3d(1.02,1.02,1.02)`;requestAnimationFrame(animTilt)}
+animTilt();
+
+// === MATRIX RAIN ===
+const cvs=document.getElementById('matrix'),ctx=cvs.getContext('2d');
+const ch='01アイウエオカキクケコ';let cols,drops;
+function initM(){cvs.width=innerWidth;cvs.height=innerHeight;cols=Math.floor(cvs.width/16);drops=Array.from({length:cols},()=>({y:Math.random()*-cvs.height,s:.5+Math.random()*1.5,o:.05+Math.random()*.5,sz:12+Math.random()*5}))}
+initM();addEventListener('resize',initM);
+function drawM(){ctx.fillStyle='rgba(0,0,0,0.06)';ctx.fillRect(0,0,cvs.width,cvs.height);for(let i=0;i<cols;i++){const d=drops[i],c=ch[Math.floor(Math.random()*ch.length)];ctx.font=d.sz+'px JetBrains Mono,monospace';ctx.shadowColor='#00FF41';ctx.shadowBlur=5;ctx.fillStyle='rgba(255,255,255,'+(.6*d.o)+')';ctx.fillText(c,i*16,d.y);ctx.shadowBlur=0;ctx.fillStyle='rgba(0,255,65,'+d.o*.5+')';for(let j=1;j<10;j++)ctx.fillText(ch[Math.floor(Math.random()*ch.length)],i*16,d.y-j*d.sz);d.y+=d.s*1.2;if(d.y-10*d.sz>cvs.height){d.y=Math.random()*-200;d.s=.5+Math.random()*1.5}}requestAnimationFrame(drawM)}
+drawM();
+
+// === HEX STREAM ===
+function randHex(len){let s='';for(let i=0;i<len;i++)s+='0123456789ABCDEF'[Math.floor(Math.random()*16)];return s}
+function randIP(){return Math.floor(Math.random()*255)+'.'+Math.floor(Math.random()*255)+'.'+Math.floor(Math.random()*255)+'.'+Math.floor(Math.random()*255)}
+const casePrefixes=['CASE#2024-GJ-','EVD#SHA256-','FIR#CYB-','HASH-0x','NODE-','PKT-','AUTH-','SCAN-'];
+function genHexLine(){
+  const r=Math.random();
+  if(r<.15){const pf=casePrefixes[Math.floor(Math.random()*casePrefixes.length)];return{t:pf+randHex(8),flash:true}}
+  if(r<.3)return{t:randIP()+':'+Math.floor(1024+Math.random()*64000),flash:false};
+  return{t:'0x'+randHex(16+Math.floor(Math.random()*16)),flash:false};
+}
+function addHexLine(container){
+  const line=genHexLine(),div=document.createElement('div');
+  div.className='hex-line'+(line.flash?' flash':'');
+  div.textContent=line.t;
+  container.appendChild(div);
+  if(container.children.length>60)container.removeChild(container.firstChild);
+  container.scrollTop=container.scrollHeight;
+}
+const hL=document.getElementById('hexLeft'),hR=document.getElementById('hexRight');
+setInterval(()=>addHexLine(hL),200);
+setInterval(()=>addHexLine(hR),250);
+// Initial burst
+for(let i=0;i<30;i++){addHexLine(hL);addHexLine(hR)}
+</script>
+</body>
+</html>
