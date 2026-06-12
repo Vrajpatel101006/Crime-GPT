@@ -3,7 +3,7 @@ import {
   BookOpen, Search, Calendar, User, FileText,
   Upload, Shield, Gavel, Eye
 } from 'lucide-react';
-import { getCases, formatDateTime } from '../store';
+import { getAccessibleCases, formatDateTime } from '../store';
 import type { DiaryEntry } from '../types';
 
 const CATEGORY_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
@@ -18,7 +18,7 @@ const CATEGORY_CONFIG: Record<string, { icon: any; color: string; bg: string }> 
 };
 
 export default function CaseDiary() {
-  const cases = getCases();
+  const cases = getAccessibleCases();
   const [selectedCase, setSelectedCase] = useState(cases[0]?.id || '');
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');

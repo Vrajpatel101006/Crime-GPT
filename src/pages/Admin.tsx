@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Users, Shield, Settings as SettingsIcon, Plus, Edit3, Trash2, Save, X, UserCheck, Lock, Bell, Database, Globe, Search, ShieldAlert, Ban, Clock } from 'lucide-react';
+import { Users, Shield, Settings as SettingsIcon, Plus, Edit3, Trash2, Save, X, UserCheck, Lock, Bell, Database, Globe, Search, ShieldAlert, Ban, Clock, Key, CheckCircle2, MapPin, AlertCircle } from 'lucide-react';
 import {
   getAllUsers, showToast, getCurrentUser, getUserState, subscribeUserState,
-  suspendUser, unsuspendUser, toggleUserActive,
+  suspendUser, unsuspendUser, toggleUserActive, getUserById,
   getPermissions, setPermissions, subscribePermissions,
   getSettings, updateSettings, subscribeSettings,
+  getAccessRequests, approveAccessRequest, rejectAccessRequest, subscribeAccessRequests,
+  getCases, formatDate,
 } from '../store';
 import type { UserRole } from '../types';
 import type { PermKey, SystemSettings } from '../store';
@@ -65,7 +67,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
 /* ─── MAIN EXPORT ─── */
 export default function Admin() {
   const user = getCurrentUser();
-  const [tab, setTab] = useState<'users' | 'roles' | 'settings'>('users');
+  const [tab, setTab] = useState<'users' | 'roles' | 'settings' | 'access'>('users');
 
   if (user.role !== 'admin') {
     return (
@@ -94,6 +96,7 @@ export default function Admin() {
         {[
           { key: 'users' as const, icon: Users, label: 'Users' },
           { key: 'roles' as const, icon: Shield, label: 'Roles & Permissions' },
+          { key: 'access' as const, icon: Key, label: 'Access Requests' },
           { key: 'settings' as const, icon: SettingsIcon, label: 'System Settings' },
         ].map(t => (
           <button
@@ -109,6 +112,7 @@ export default function Admin() {
 
       {tab === 'users' && <UsersTab />}
       {tab === 'roles' && <RolesTab />}
+      {tab === 'access' && <AccessRequestsTab />}
       {tab === 'settings' && <SettingsTab />}
     </div>
   );
@@ -707,6 +711,181 @@ function SettingsTab() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── ACCESS REQUESTS TAB ─── */
+function AccessRequestsTab() {
+  const [requests, setRequests] = useState(getAccessRequests);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => subscribeAccessRequests(() => { setRequests(getAccessRequests()); forceUpdate(n => n + 1); }), []);
+
+  const allCases = getCases();
+  const getCaseFir = (caseId: string) => allCases.find(c => c.id === caseId)?.firNumber || caseId;
+  const getUserName = (userId: string) => getUserById(userId)?.name || userId;
+
+  const filtered = filter === 'all' ? requests : requests.filter(r => r.status === filter);
+  const pendingCount = requests.filter(r => r.status === 'pending').length;
+  const approvedCount = requests.filter(r => r.status === 'approved').length;
+  const rejectedCount = requests.filter(r => r.status === 'rejected').length;
+
+  const handleApprove = (id: string) => {
+    approveAccessRequest(id);
+    setRequests(getAccessRequests());
+    showToast('Access request approved — officer now has cross-station access.', 'success');
+  };
+
+  const handleReject = (id: string) => {
+    rejectAccessRequest(id, rejectReason.trim() || 'No reason provided');
+    setRequests(getAccessRequests());
+    setRejectingId(null);
+    setRejectReason('');
+    showToast('Access request rejected.', 'info');
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Cross-Station Access Requests</h3>
+          <p className="text-muted" style={{ margin: 0, fontSize: '0.85rem' }}>Zero FIR Protocol — review and manage Layer 6 access requests</p>
+        </div>
+        <select className="form-select" style={{ width: 140 }} value={filter} onChange={e => setFilter(e.target.value as any)}>
+          <option value="all">All ({requests.length})</option>
+          <option value="pending">Pending ({pendingCount})</option>
+          <option value="approved">Approved ({approvedCount})</option>
+          <option value="rejected">Rejected ({rejectedCount})</option>
+        </select>
+      </div>
+
+      {/* Summary Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+        <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <Clock size={18} style={{ color: '#f59e0b' }} />
+            <strong>Pending</strong>
+          </div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f59e0b' }}>{pendingCount}</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Awaiting review</div>
+        </div>
+        <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <CheckCircle2 size={18} style={{ color: '#10b981' }} />
+            <strong>Approved</strong>
+          </div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981' }}>{approvedCount}</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Access granted</div>
+        </div>
+        <div className="card" style={{ borderLeft: '4px solid #ef4444' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <AlertCircle size={18} style={{ color: '#ef4444' }} />
+            <strong>Rejected</strong>
+          </div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#ef4444' }}>{rejectedCount}</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Access denied</div>
+        </div>
+      </div>
+
+      {/* Requests Table */}
+      {filtered.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <Key size={32} style={{ color: 'var(--text-muted)', marginBottom: 8, opacity: 0.5 }} />
+          <h3 style={{ color: 'var(--text-primary)', marginBottom: 4 }}>No Access Requests</h3>
+          <p style={{ color: 'var(--text-muted)', margin: 0 }}>No cross-station access requests {filter !== 'all' ? `with status "${filter}"` : 'in the system'}.</p>
+        </div>
+      ) : (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th>Requested By</th>
+                <th>From Station</th>
+                <th>Case</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(r => {
+                const isRejecting = rejectingId === r.id;
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{getUserName(r.requestedBy)}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{r.requestedByRank}</div>
+                    </td>
+                    <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      <MapPin size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                      {r.requestedByStation}
+                    </td>
+                    <td>
+                      <span style={{ fontWeight: 600, fontSize: '0.83rem', color: 'var(--text-primary)' }}>{getCaseFir(r.caseId)}</span>
+                    </td>
+                    <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.reason}>
+                      {r.reason}
+                    </td>
+                    <td>
+                      <span className={`badge ${r.status === 'approved' ? 'badge-success' : r.status === 'pending' ? 'badge-warning' : 'badge-danger'}`}>
+                        {r.status === 'approved' ? '✓ Approved' : r.status === 'pending' ? '⏱ Pending' : '✗ Rejected'}
+                      </span>
+                      {r.approvedBy && (
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                          by {getUserName(r.approvedBy)}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {formatDate(r.createdAt)}
+                    </td>
+                    <td>
+                      {r.status === 'pending' && (
+                        isRejecting ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 180 }}>
+                            <input
+                              className="form-input"
+                              placeholder="Rejection reason (optional)"
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleReject(r.id); }}
+                              autoFocus
+                              style={{ fontSize: '0.8rem' }}
+                            />
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', flex: 1 }} onClick={() => handleReject(r.id)}>Confirm</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => { setRejectingId(null); setRejectReason(''); }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn btn-ghost btn-sm" style={{ color: '#10b981' }} onClick={() => handleApprove(r.id)} title="Approve">
+                              <CheckCircle2 size={14} /> Approve
+                            </button>
+                            <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} onClick={() => setRejectingId(r.id)} title="Reject">
+                              <X size={14} /> Reject
+                            </button>
+                          </div>
+                        )
+                      )}
+                      {r.status !== 'pending' && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {r.status === 'approved' ? `Approved ${r.approvedAt ? formatDate(r.approvedAt) : ''}` : 'Rejected'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

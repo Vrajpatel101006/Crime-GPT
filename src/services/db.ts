@@ -38,6 +38,11 @@ async function patch(path: string, data: Record<string, any>): Promise<void> {
 
 export { patch as update };
 
+/* ─── HELPER: Multi-path update ─── */
+export async function updateMultiple(updates: Record<string, any>): Promise<void> {
+  await update(ref(firebaseDb), updates);
+}
+
 /* ─── HELPER: Delete ─── */
 async function deleteData(path: string): Promise<void> {
   await remove(dbRef(path));
@@ -256,6 +261,10 @@ export async function updateDocument(id: string, updates: Record<string, any>): 
 /* ════════════════════════════════════════════
    DIARY ENTRIES
    ════════════════════════════════════════════ */
+
+export async function getAllDiaryEntries(): Promise<Record<string, Record<string, any>>> {
+  return (await readOnce<Record<string, Record<string, any>>>('/diaryEntries')) || {};
+}
 
 export async function getDiaryEntries(caseId: string): Promise<Record<string, any>> {
   return (await readOnce<Record<string, any>>(`/diaryEntries/${caseId}`)) || {};

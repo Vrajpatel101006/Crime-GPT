@@ -4,10 +4,20 @@
 
 export type UserRole = 'io' | 'sho' | 'legal' | 'admin';
 
+export type PoliceRank = 
+  | 'DGP' | 'Addl.DGP' | 'IG' | 'DIG' | 'SP' | 'Addl.SP' 
+  | 'DySP' | 'Inspector' | 'SI' | 'ASI' | 'HC' | 'PC';
+
+export type ClearanceLevel = 1 | 2 | 3 | 4 | 5;
+
+export type CaseClassification = 'public' | 'confidential' | 'secret';
+
 export interface User {
   id: string;
   name: string;
   role: UserRole;
+  rank?: PoliceRank;
+  clearanceLevel?: ClearanceLevel;
   badge: string;
   station: string;
   email: string;
@@ -22,6 +32,9 @@ export interface CaseRecord {
   caseNumber: string;
   policeStation: string;
   assignedOfficer: string;
+  assignedStation: string;
+  classification: CaseClassification;
+  clearanceRequired: ClearanceLevel;
   status: CaseStatus;
   crimeType: string;
   createdAt: string;
@@ -90,7 +103,7 @@ export interface CustodyEntry {
 
 export interface LegalSection {
   id: string;
-  act: 'BNS' | 'BNSS' | 'BSA';
+  act: 'BNS' | 'BNSS' | 'BSA' | 'IT Act' | 'DPDP Act' | 'POCSO' | 'NDPS';
   sectionNumber: string;
   title: string;
   description: string;
@@ -99,6 +112,7 @@ export interface LegalSection {
   evidence_required: string[];
   relatedSections: string[];
   punishment?: string;
+  legacyReference?: string;
 }
 
 export interface LegalSuggestion {
@@ -132,6 +146,7 @@ export type DocumentType =
   | 'fir'
   | 'remand_request'
   | 'chargesheet'
+  | 'purvani_chargesheet'
   | 'seizure_receipt'
   | 'medical_letter'
   | 'court_custody'
@@ -189,4 +204,28 @@ export interface Toast {
   message: string;
   type: 'success' | 'error' | 'info' | 'warning';
   duration?: number;
+}
+
+export interface AccessRequest {
+  id: string;
+  caseId: string;
+  requestedBy: string;
+  requestedByRank: PoliceRank;
+  requestedByStation: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+export interface SecurityAuditLog {
+  id: string;
+  userId: string;
+  action: 'access_granted' | 'access_denied' | 'access_requested' | 'classification_changed' | 'clearance_override';
+  targetCaseId: string;
+  details: string;
+  timestamp: string;
+  severity: 'info' | 'warning' | 'critical';
 }

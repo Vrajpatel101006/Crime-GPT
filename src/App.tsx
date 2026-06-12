@@ -12,6 +12,7 @@ import {
   subscribeToasts, getIsAuthenticated, subscribeAuth, logout, showToast,
   requestRoleSwitch, getPendingRoleSwitch, clearPendingRoleSwitch,
   initializeStore, getIsInitialized, subscribeInitialized,
+  getUserRank, rankName, getAccessibleCases, subscribeCases,
 } from './store';
 import type { Toast } from './store';
 import type { UserRole, Notification as NotifType } from './types';
@@ -31,18 +32,19 @@ import Admin from './pages/Admin';
 import './index.css';
 
 /* ─── NAVIGATION ITEMS ─── */
-const NAV_ITEMS = [
+/* visibleTo controls which roles see each nav item — undefined = all roles */
+const NAV_ITEMS: Array<{ path?: string; icon?: any; label: string; badge?: number; section?: boolean; adminOnly?: boolean; visibleTo?: Array<'io' | 'sho' | 'legal' | 'admin'> }> = [
   { label: 'Overview', section: true },
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { label: 'Investigation', section: true },
-  { path: '/cases', icon: FolderOpen, label: 'Cases', badge: 3 },
+  { path: '/cases', icon: FolderOpen, label: 'Cases' },
   { path: '/evidence', icon: Upload, label: 'Evidence' },
   { path: '/legal', icon: Scale, label: 'Legal Intelligence' },
-  { path: '/diary', icon: BookOpen, label: 'Case Diary' },
+  { path: '/diary', icon: BookOpen, label: 'Case Diary', visibleTo: ['io', 'sho', 'admin'] },
   { path: '/documents', icon: FileText, label: 'Documents' },
   { label: 'Workflow', section: true },
-  { path: '/review', icon: CheckSquare, label: 'Reviews', badge: 2 },
-  { path: '/audit', icon: ScrollText, label: 'Audit Logs' },
+  { path: '/review', icon: CheckSquare, label: 'Reviews', visibleTo: ['sho', 'legal', 'admin'] },
+  { path: '/audit', icon: ScrollText, label: 'Audit Logs', adminOnly: true },
   { label: 'System', section: true, adminOnly: true },
   { path: '/admin', icon: Settings, label: 'Administration', adminOnly: true },
 ];
@@ -59,6 +61,31 @@ const PAGE_TITLES: Record<string, string> = {
   '/audit': 'Audit Logs',
   '/admin': 'Administration',
 };
+
+/* ─── ROUTE ACCESS MAP ─── */
+const ROUTE_ROLES: Record<string, Array<'io' | 'sho' | 'legal' | 'admin'>> = {
+  '/diary': ['io', 'sho', 'admin'],
+  '/review': ['sho', 'legal', 'admin'],
+  '/audit': ['admin'],
+  '/admin': ['admin'],
+};
+
+function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: Array<'io' | 'sho' | 'legal' | 'admin'> }) {
+  const role = getCurrentRole();
+  if (!allowedRoles.includes(role)) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center' }}>
+        <ShieldCheck size={48} style={{ color: 'var(--text-muted)', marginBottom: 16, opacity: 0.4 }} />
+        <h2 style={{ color: 'var(--text-primary)', marginBottom: 8 }}>Access Restricted</h2>
+        <p style={{ color: 'var(--text-secondary)', maxWidth: 400, lineHeight: 1.6 }}>
+          This page is restricted to <strong>{allowedRoles.map(r => r.toUpperCase()).join(', ')}</strong> roles only.
+          Your current role ({role.toUpperCase()}) does not have access.
+        </p>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 /* ─── TOAST RENDERER ─── */
 function ToastContainer() {
@@ -131,7 +158,24 @@ function NotificationsPanel({ open, onClose }: { open: boolean; onClose: () => v
 /* ─── SIDEBAR ─── */
 function Sidebar({ collapsed }: { collapsed: boolean }) {
   const user = getCurrentUser();
-  const roleLabels: Record<UserRole, string> = { io: 'Investigation Officer', sho: 'Station House Officer', legal: 'Legal Advisor', admin: 'Administrator' };
+  const userRank = getUserRank(user);
+  const [, setTick] = useState(0);
+
+  // Re-render on data changes for live badge counts
+  useEffect(() => {
+    const unsub = subscribeCases(() => setTick(t => t + 1));
+    return () => { unsub(); };
+  }, []);
+
+  // Dynamic badge counts from accessible data
+  const accessibleCases = getAccessibleCases();
+  const activeCases = accessibleCases.filter(c => c.status === 'active' || c.status === 'draft').length;
+  const pendingReviews = accessibleCases.filter(c => c.reviewStatus === 'pending_sho' || c.reviewStatus === 'pending_legal').length;
+
+  const dynamicBadges: Record<string, number | undefined> = {
+    '/cases': activeCases > 0 ? activeCases : undefined,
+    '/review': pendingReviews > 0 ? pendingReviews : undefined,
+  };
 
   return (
     <aside className="sidebar" style={collapsed ? { width: 'var(--sidebar-collapsed)' } : undefined}>
@@ -150,13 +194,18 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
 
       {/* Nav */}
       <nav className="sidebar-nav">
-        {NAV_ITEMS.filter(item => !item.adminOnly || user.role === 'admin').map((item, i) => {
+        {NAV_ITEMS.filter(item => {
+          if (item.adminOnly && user.role !== 'admin') return false;
+          if (item.visibleTo && !item.visibleTo.includes(user.role)) return false;
+          return true;
+        }).map((item, i) => {
           // Skip section labels that have no visible children after them
           if (item.section && item.adminOnly && user.role !== 'admin') return null;
           if (item.section) {
             return !collapsed ? <div key={i} className="sidebar-section-label">{item.label}</div> : <div key={i} style={{ height: 16 }} />;
           }
           const Icon = item.icon!;
+          const badge = item.path ? dynamicBadges[item.path] : undefined;
           return (
             <NavLink
               key={item.path}
@@ -167,7 +216,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
             >
               <Icon className="sidebar-item-icon" size={20} />
               {!collapsed && <span>{item.label}</span>}
-              {!collapsed && item.badge && <span className="sidebar-badge">{item.badge}</span>}
+              {!collapsed && badge && <span className="sidebar-badge">{badge}</span>}
             </NavLink>
           );
         })}
@@ -187,7 +236,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
           {!collapsed && (
             <div className="sidebar-user-info">
               <div className="sidebar-user-name">{user.name}</div>
-              <div className="sidebar-user-role">{roleLabels[user.role]}</div>
+              <div className="sidebar-user-role">{rankName(userRank)} • {user.station}</div>
             </div>
           )}
           {!collapsed && <LogOut size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
@@ -283,6 +332,8 @@ function AppShell() {
   const [isAuth, setIsAuth] = useState(getIsAuthenticated);
   const [pendingRole, setPendingRole] = useState<UserRole | null>(null);
   const [isReady, setIsReady] = useState(getIsInitialized);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!getIsInitialized()) {
@@ -299,6 +350,17 @@ function AppShell() {
       }
     });
   }, []);
+
+  // Auto-redirect when role changes and current path is inaccessible
+  useEffect(() => {
+    return subscribeRole((newRole) => {
+      const restrictedRoles = ROUTE_ROLES[location.pathname];
+      if (restrictedRoles && !restrictedRoles.includes(newRole)) {
+        navigate('/', { replace: true });
+        showToast('Redirected to Dashboard — previous page is restricted for your role.', 'info');
+      }
+    });
+  }, [location.pathname, navigate]);
 
   if (!isReady) {
     return (
@@ -367,11 +429,11 @@ function AppShell() {
             <Route path="/cases" element={<Cases />} />
             <Route path="/evidence" element={<EvidencePage />} />
             <Route path="/legal" element={<LegalIntel />} />
-            <Route path="/diary" element={<CaseDiary />} />
+            <Route path="/diary" element={<RoleGuard allowedRoles={ROUTE_ROLES['/diary']}><CaseDiary /></RoleGuard>} />
             <Route path="/documents" element={<Documents />} />
-            <Route path="/review" element={<Review />} />
-            <Route path="/audit" element={<AuditLogs />} />
-            <Route path="/admin" element={<Admin />} />
+            <Route path="/review" element={<RoleGuard allowedRoles={ROUTE_ROLES['/review']}><Review /></RoleGuard>} />
+            <Route path="/audit" element={<RoleGuard allowedRoles={ROUTE_ROLES['/audit']}><AuditLogs /></RoleGuard>} />
+            <Route path="/admin" element={<RoleGuard allowedRoles={ROUTE_ROLES['/admin']}><Admin /></RoleGuard>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

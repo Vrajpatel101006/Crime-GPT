@@ -6,7 +6,7 @@
    Real-time listeners sync across devices.
    ============================================ */
 
-import { type User, type CaseRecord, type Evidence, type LegalSection, type Judgment, type AuditLog, type Notification, type Toast, type LegalSuggestion, type GeneratedDocument, type UserRole, type DiaryEntry } from '../types';
+import { type User, type CaseRecord, type Evidence, type LegalSection, type Judgment, type AuditLog, type Notification, type Toast, type LegalSuggestion, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest } from '../types';
 import { firebaseLogin, firebaseLogout, firebaseCreateUser, ensureDemoAuthUsers, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
 import * as db from '../services/db';
 import {
@@ -14,6 +14,7 @@ import {
   SEED_SETTINGS, SEED_CASES, SEED_EVIDENCE, SEED_DOCUMENTS,
   SEED_DIARY_ENTRIES, SEED_AUDIT_LOGS, SEED_NOTIFICATIONS,
 } from '../data/seed';
+import { isAIConfigured, analyzeComplaint, suggestLegalSections, findJudgments, type AIAnalysisResult } from '../services/ai';
 
 export type { Toast } from '../types';
 
@@ -71,7 +72,7 @@ export async function initializeStore(): Promise<void> {
       console.log('[CrimeGPT] Seed complete.');
     }
 
-    const [users, roles, legalSections, judgments, cases, evidence, documents, auditLogs, settings] = await Promise.all([
+    const [users, roles, legalSections, judgments, cases, evidence, documents, auditLogs, settings, allDiaryEntries] = await Promise.all([
       db.getAllUsers(),
       db.getRoles(),
       db.getAllLegalSections(),
@@ -81,7 +82,11 @@ export async function initializeStore(): Promise<void> {
       db.getAllDocuments(),
       db.getAllAuditLogs(),
       db.getSettings(),
+      db.getAllDiaryEntries(),
     ]);
+
+    // Merge diary entries from /diaryEntries/ into cases before hydration
+    mergeDiaryEntriesIntoCases(cases, allDiaryEntries);
 
     hydrateUsers(users);
     hydrateUserStates();
@@ -93,6 +98,32 @@ export async function initializeStore(): Promise<void> {
     hydrateDocuments(documents);
     hydrateAuditLogs(auditLogs);
     hydrateSettings(settings);
+
+    // Auto-seed new legal sections and judgments if missing from Firebase
+    const existingSectionIds = new Set(Object.keys(legalSections));
+    const missingSections = SEED_LEGAL_SECTIONS.filter(s => !existingSectionIds.has(s.id));
+    const existingJudgmentIds = new Set(Object.keys(judgments));
+    const missingJudgments = SEED_JUDGMENTS.filter(j => !existingJudgmentIds.has(j.id));
+
+    if (missingSections.length > 0 || missingJudgments.length > 0) {
+      console.log(`[CrimeGPT] Seeding ${missingSections.length} new legal sections and ${missingJudgments.length} new judgments...`);
+      const updates: Record<string, any> = {};
+      for (const section of missingSections) {
+        updates[`/legalSections/${section.id}`] = section;
+      }
+      for (const judgment of missingJudgments) {
+        updates[`/judgments/${judgment.id}`] = judgment;
+      }
+      await db.updateMultiple(updates);
+      // Re-hydrate with merged data
+      const [newLegalSections, newJudgments] = await Promise.all([
+        db.getAllLegalSections(),
+        db.getAllJudgments(),
+      ]);
+      hydrateLegalSections(newLegalSections);
+      hydrateJudgments(newJudgments);
+      console.log(`[CrimeGPT] Seeded ${missingSections.length} new sections and ${missingJudgments.length} new judgments.`);
+    }
 
     if (Object.keys(users).length === 0) {
       console.warn('[CrimeGPT] Firebase returned empty data — using local seed.');
@@ -125,6 +156,15 @@ function setupRealtimeListeners(): void {
     db.onDataChange('/settings', (data) => { if (data) hydrateSettings(data); }),
     db.onDataChange('/legalSections', (data) => { if (data) hydrateLegalSections(data); }),
     db.onDataChange('/judgments', (data) => { if (data) hydrateJudgments(data); }),
+    // Re-merge diary entries into cases whenever /diaryEntries changes
+    db.onDataChange<Record<string, Record<string, any>>>('/diaryEntries', async (data) => {
+      if (!data) return;
+      try {
+        const freshCases = await db.getAllCases();
+        mergeDiaryEntriesIntoCases(freshCases, data);
+        hydrateCases(freshCases);
+      } catch { /* ignore — next /cases listener will catch it */ }
+    }),
   );
 }
 
@@ -145,6 +185,8 @@ function hydrateUsers(data: Record<string, any>): void {
       id,
       name: u.fullName || u.name,
       role: u.role,
+      rank: u.rank || undefined,
+      clearanceLevel: u.clearanceLevel || undefined,
       badge: u.badgeNumber || u.badge,
       station: u.stationName || u.station,
       email: u.email,
@@ -290,6 +332,209 @@ export function subscribePermissions(listener: () => void): () => void {
 }
 
 /* ════════════════════════════════════════════
+   6-LAYER SECURITY ENGINE
+   Gujarat Police Hierarchy + BNSS 2023
+   ════════════════════════════════════════════
+   Layer 1: Case Ownership (BNSS Sec 175, 192)
+   Layer 2: Station Isolation (BNSS Sec 179, 185)
+   Layer 3: Hierarchical Access (DGP→PC)
+   Layer 4: Data Classification (Sec 192(5))
+   Layer 5: Clearance Levels (SP assignment)
+   Layer 6: Access Requests (Zero FIR protocol)
+   ════════════════════════════════════════════ */
+
+/* ─── Access Request Store (Layer 6) ─── */
+let _accessRequests: AccessRequest[] = [];
+let _accessRequestListeners: Array<() => void> = [];
+
+const RANK_HIERARCHY: Record<PoliceRank, number> = {
+  'PC': 1, 'HC': 2, 'ASI': 3, 'SI': 4, 'Inspector': 5,
+  'DySP': 6, 'Addl.SP': 7, 'SP': 8, 'DIG': 9, 'IG': 10,
+  'Addl.DGP': 11, 'DGP': 12,
+};
+
+const ROLE_DEFAULT_RANK: Record<UserRole, PoliceRank> = {
+  io: 'Inspector', sho: 'Inspector', legal: 'DySP', admin: 'SP',
+};
+
+const ROLE_CLEARANCE: Record<UserRole, ClearanceLevel> = {
+  io: 2, sho: 3, legal: 4, admin: 5,
+};
+
+export function getRankLevel(rank: PoliceRank): number {
+  return RANK_HIERARCHY[rank] || 0;
+}
+
+export function getUserRank(user: User): PoliceRank {
+  return user.rank || ROLE_DEFAULT_RANK[user.role] || 'PC';
+}
+
+export function getUserClearance(user: User): ClearanceLevel {
+  return user.clearanceLevel || ROLE_CLEARANCE[user.role] || 1;
+}
+
+export function getRoleDefaultRank(role: UserRole): PoliceRank {
+  return ROLE_DEFAULT_RANK[role] || 'PC';
+}
+
+export function rankName(rank: PoliceRank): string {
+  const names: Record<PoliceRank, string> = {
+    'PC': 'Police Constable', 'HC': 'Head Constable', 'ASI': 'Asst. Sub-Inspector',
+    'SI': 'Sub-Inspector', 'Inspector': 'Inspector', 'DySP': 'Dy. Superintendent',
+    'Addl.SP': 'Addl. Superintendent', 'SP': 'Superintendent', 'DIG': 'Dy. Inspector General',
+    'IG': 'Inspector General', 'Addl.DGP': 'Addl. Director General', 'DGP': 'Director General',
+  };
+  return names[rank] || rank;
+}
+
+/**
+ * LAYER 1-6: Core access check — determines if a user can view/access a case
+ * Returns { allowed, reason } for audit transparency
+ */
+export function canAccessCase(user: User, caseRecord: CaseRecord): { allowed: boolean; reason: string } {
+  const userStation = user.station;
+  const caseStation = caseRecord.assignedStation || caseRecord.policeStation;
+  const userRank = getUserRank(user);
+  const userClearance = getUserClearance(user);
+  const rankLevel = getRankLevel(userRank);
+
+  // LAYER 5: Clearance check — user clearance must meet case requirement
+  if (userClearance < caseRecord.clearanceRequired) {
+    return { allowed: false, reason: `Insufficient clearance (need Level ${caseRecord.clearanceRequired}, have Level ${userClearance})` };
+  }
+
+  // LAYER 4: Classification check — SECRET requires SP+ rank regardless of station
+  if (caseRecord.classification === 'secret' && rankLevel < getRankLevel('SP')) {
+    return { allowed: false, reason: 'SECRET classification requires SP rank or above' };
+  }
+
+  // LAYER 1: Case Ownership — assigned officer always has access
+  if (caseRecord.assignedOfficer === user.id) {
+    return { allowed: true, reason: 'Case owner' };
+  }
+
+  // LAYER 3: Hierarchical — SP+ (rank ≥ 8) can see ALL cases in their jurisdiction
+  if (rankLevel >= getRankLevel('SP')) {
+    return { allowed: true, reason: `Hierarchical access (${rankName(userRank)})` };
+  }
+
+  // LAYER 3: SHO supervises IO — if user is SHO role, can see cases assigned to IOs at same station
+  if (user.role === 'sho' && caseStation === userStation) {
+    return { allowed: true, reason: 'SHO station supervision' };
+  }
+
+  // LAYER 2: Station Isolation — same station, CONFIDENTIAL or PUBLIC
+  if (caseStation === userStation && caseRecord.classification !== 'secret') {
+    return { allowed: true, reason: 'Same station access' };
+  }
+
+  // LAYER 2: Cross-station — only PUBLIC classification passes freely
+  if (caseStation !== userStation && caseRecord.classification === 'public') {
+    return { allowed: true, reason: 'Public classification — cross-station allowed' };
+  }
+
+  // LAYER 6: Check if user has an approved access request for this case
+  const approvedRequest = _accessRequests.find(
+    r => r.caseId === caseRecord.id && r.requestedBy === user.id && r.status === 'approved'
+  );
+  if (approvedRequest) {
+    // Check expiry
+    if (approvedRequest.expiresAt && new Date(approvedRequest.expiresAt) < new Date()) {
+      return { allowed: false, reason: 'Access request expired' };
+    }
+    return { allowed: true, reason: 'Approved access request' };
+  }
+
+  return { allowed: false, reason: `Station isolation — case belongs to ${caseStation}` };
+}
+
+/**
+ * LAYER 2: Get all cases the current user is authorized to see
+ */
+export function getAccessibleCases(user?: User): CaseRecord[] {
+  const u = user || getCurrentUser();
+  return _cases.filter(c => canAccessCase(u, c).allowed);
+}
+
+/**
+ * LAYER 6: Check if cross-station access request is needed
+ */
+export function needsAccessRequest(user: User, caseRecord: CaseRecord): boolean {
+  const userStation = user.station;
+  const caseStation = caseRecord.assignedStation || caseRecord.policeStation;
+  return userStation !== caseStation && caseRecord.classification !== 'public';
+}
+
+/* ════════════════════════════════════════════
+   ACCESS REQUEST WORKFLOW (Layer 6)
+   Cross-station access via Zero FIR protocol
+   ════════════════════════════════════════════ */
+
+export function getAccessRequests(): AccessRequest[] {
+  return [..._accessRequests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export function getAccessRequestsForCase(caseId: string): AccessRequest[] {
+  return _accessRequests.filter(r => r.caseId === caseId);
+}
+
+export function getPendingAccessRequests(): AccessRequest[] {
+  return _accessRequests.filter(r => r.status === 'pending');
+}
+
+export function createAccessRequest(caseId: string, reason: string): AccessRequest {
+  const user = getCurrentUser();
+  const userRank = getUserRank(user);
+  const request: AccessRequest = {
+    id: `ar-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    caseId,
+    requestedBy: user.id,
+    requestedByRank: userRank,
+    requestedByStation: user.station,
+    reason,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+  };
+  _accessRequests.push(request);
+  db.update(`/accessRequests/${request.id}`, request);
+  addAuditLog('ACCESS_REQUEST', caseId, `${user.name} (${rankName(userRank)}, ${user.station}) requested access — ${reason}`, user.id);
+  _accessRequestListeners.forEach(l => l());
+  return request;
+}
+
+export function approveAccessRequest(requestId: string): void {
+  const approver = getCurrentUser();
+  _accessRequests = _accessRequests.map(r =>
+    r.id === requestId ? { ...r, status: 'approved' as const, approvedBy: approver.id, approvedAt: new Date().toISOString() } : r
+  );
+  const request = _accessRequests.find(r => r.id === requestId);
+  if (request) {
+    db.update(`/accessRequests/${requestId}`, { status: 'approved', approvedBy: approver.id, approvedAt: new Date().toISOString() });
+    addAuditLog('ACCESS_APPROVED', request.caseId, `${approver.name} approved cross-station access for ${request.requestedBy}`, approver.id);
+  }
+  _accessRequestListeners.forEach(l => l());
+}
+
+export function rejectAccessRequest(requestId: string, reason?: string): void {
+  const rejector = getCurrentUser();
+  _accessRequests = _accessRequests.map(r =>
+    r.id === requestId ? { ...r, status: 'rejected' as const } : r
+  );
+  const request = _accessRequests.find(r => r.id === requestId);
+  if (request) {
+    db.update(`/accessRequests/${requestId}`, { status: 'rejected' });
+    addAuditLog('ACCESS_REJECTED', request.caseId, `${rejector.name} rejected cross-station access — ${reason || 'No reason'}`, rejector.id);
+  }
+  _accessRequestListeners.forEach(l => l());
+}
+
+export function subscribeAccessRequests(listener: () => void): () => void {
+  _accessRequestListeners.push(listener);
+  return () => { _accessRequestListeners = _accessRequestListeners.filter(l => l !== listener); };
+}
+
+/* ════════════════════════════════════════════
    SYSTEM SETTINGS
    ════════════════════════════════════════════ */
 export interface SystemSettings {
@@ -355,6 +600,7 @@ function hydrateLegalSections(data: Record<string, any>): void {
     evidence_required: s.evidence_required || [],
     relatedSections: s.relatedSections || [],
     punishment: s.punishment,
+    legacyReference: s.legacyReference,
   }));
 }
 
@@ -388,6 +634,30 @@ export function getJudgments(): Judgment[] {
    ════════════════════════════════════════════ */
 let _cases: CaseRecord[] = [];
 
+/**
+ * Merge diary entries from /diaryEntries/ path into case objects.
+ * Firebase stores diary entries in two places:
+ * 1. /cases/${caseId}/diaryEntries (embedded array)
+ * 2. /diaryEntries/${caseId}/${entryId} (separate path)
+ * This function merges both so no entries are lost on hydration.
+ */
+function mergeDiaryEntriesIntoCases(
+  cases: Record<string, any>,
+  allDiaryEntries: Record<string, Record<string, any>>
+): void {
+  if (!allDiaryEntries) return;
+  for (const [caseId, entriesMap] of Object.entries(allDiaryEntries)) {
+    if (cases[caseId] && entriesMap) {
+      const embedded: any[] = cases[caseId].diaryEntries || [];
+      const external: any[] = Object.values(entriesMap);
+      // Deduplicate by entry ID
+      const seen = new Set(embedded.map((e: any) => e.id));
+      const merged = [...embedded, ...external.filter(e => !seen.has(e.id))];
+      cases[caseId].diaryEntries = merged;
+    }
+  }
+}
+
 function hydrateCases(data: Record<string, any>): void {
   _cases = Object.values(data).map((c: any) => ({
     id: c.id,
@@ -395,6 +665,9 @@ function hydrateCases(data: Record<string, any>): void {
     caseNumber: c.caseNumber,
     policeStation: c.policeStation,
     assignedOfficer: c.assignedOfficer,
+    assignedStation: c.assignedStation || c.policeStation,
+    classification: c.classification || 'confidential',
+    clearanceRequired: c.clearanceRequired || 1,
     status: c.status,
     crimeType: c.crimeType,
     createdAt: c.createdAt,
@@ -422,9 +695,16 @@ export function getCase(id: string): CaseRecord | undefined {
 }
 
 export function addCase(c: CaseRecord): void {
-  _cases = [c, ..._cases];
-  db.createCase(c);
-  addAuditLog('CREATE_CASE', c.id, `Created case ${c.firNumber} for ${c.crimeType}`);
+  // Ensure security defaults
+  const secureCase: CaseRecord = {
+    ...c,
+    assignedStation: c.assignedStation || c.policeStation,
+    classification: c.classification || 'confidential',
+    clearanceRequired: c.clearanceRequired || 1,
+  };
+  _cases = [secureCase, ..._cases];
+  db.createCase(secureCase);
+  addAuditLog('CREATE_CASE', secureCase.id, `Created case ${secureCase.firNumber} for ${secureCase.crimeType} [${secureCase.classification.toUpperCase()}]`);
   _caseListeners.forEach(l => l());
 }
 
@@ -442,7 +722,14 @@ export function deleteCase(id: string): void {
 
 export function addDiaryEntry(caseId: string, entry: DiaryEntry): void {
   _cases = _cases.map(c => c.id === caseId ? { ...c, diaryEntries: [...c.diaryEntries, entry] } : c);
-  db.addDiaryEntry(caseId, entry);
+
+  // Atomic write to BOTH paths so real-time listener on /cases picks up the new entry
+  const updatedCase = _cases.find(c => c.id === caseId);
+  db.updateMultiple({
+    [`/diaryEntries/${caseId}/${entry.id}`]: entry,
+    [`/cases/${caseId}/diaryEntries`]: updatedCase?.diaryEntries || [entry],
+  });
+
   addAuditLog('DIARY_ENTRY', caseId, entry.action);
   _caseListeners.forEach(l => l());
 }
@@ -632,69 +919,156 @@ export function getToasts(): Toast[] {
 }
 
 /* ════════════════════════════════════════════
-   AI SIMULATION
+   AI ENGINE — Groq LLM + Fallback Simulators
    ════════════════════════════════════════════ */
-export function simulateLegalAnalysis(narrative: string): Promise<{ suggestions: LegalSuggestion[]; judgments: Judgment[] }> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const lowerNarrative = narrative.toLowerCase();
-      const matched: LegalSuggestion[] = [];
 
-      for (const section of LEGAL_SECTIONS) {
-        const matchedKeywords = section.keywords.filter(kw => lowerNarrative.includes(kw));
-        if (matchedKeywords.length > 0 || section.crimeTypes.some(ct => lowerNarrative.includes(ct.toLowerCase()))) {
-          const confidence = Math.min(0.98, 0.6 + matchedKeywords.length * 0.1 + Math.random() * 0.1);
-          matched.push({
-            section,
-            confidence,
-            reasoning: `The complaint narrative contains keywords related to ${section.title}: ${matchedKeywords.join(', ') || section.crimeTypes[0] || 'related crime patterns'}. This section covers ${section.description.substring(0, 120)}...`,
-            matchedKeywords,
-          });
-        }
-      }
+export function getIsAIConfigured(): boolean { return isAIConfigured(); }
 
-      if (matched.length === 0) {
-        matched.push({
-          section: LEGAL_SECTIONS[0] || {} as LegalSection,
-          confidence: 0.55,
-          reasoning: 'General fraud indicators detected in the complaint narrative.',
-          matchedKeywords: ['fraud'],
-        });
-      }
-
-      matched.sort((a, b) => b.confidence - a.confidence);
-
-      const relevantJudgments = JUDGMENTS.filter(j =>
-        matched.some(m => j.relevantSections.includes(m.section.id))
-      );
-
-      resolve({ suggestions: matched.slice(0, 5), judgments: relevantJudgments });
-    }, 1500 + Math.random() * 1000);
-  });
+/* ─── Enhanced return type for entity extraction ─── */
+export interface EnhancedEntityResult {
+  crimeType: string;
+  entities: Record<string, string>;
+  analysis?: AIAnalysisResult;
+  aiPowered: boolean;
 }
 
-export function simulateEntityExtraction(text: string): Promise<{ crimeType: string; entities: Record<string, string> }> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const lower = text.toLowerCase();
-      let crimeType = 'General Offence';
-      if (lower.includes('scam') || lower.includes('fraud') || lower.includes('cheat')) crimeType = 'Cyber Fraud';
-      else if (lower.includes('theft') || lower.includes('steal') || lower.includes('stolen')) crimeType = 'Theft';
-      else if (lower.includes('identity') || lower.includes('fake profile') || lower.includes('impersonat')) crimeType = 'Identity Theft';
-      else if (lower.includes('forg') || lower.includes('fake document')) crimeType = 'Document Forgery';
-      else if (lower.includes('assault') || lower.includes('beat') || lower.includes('hurt') || lower.includes('attack')) crimeType = 'Assault';
+/* ─── Main entity extraction (tries AI, falls back to simulator) ─── */
+export async function simulateEntityExtraction(text: string): Promise<EnhancedEntityResult> {
+  if (isAIConfigured()) {
+    try {
+      const ai = await analyzeComplaint(text);
 
+      // Build entities map from AI result
       const entities: Record<string, string> = {};
-      const phoneMatch = text.match(/(\+?\d[\d\s-]{9,})/);
-      if (phoneMatch) entities['Phone'] = phoneMatch[1].trim();
-      const amountMatch = text.match(/₹[\d,. lakhlakhcrore]+|Rs\.?\s*[\d,. lakhlakhcrore]+|\d+ lakh|\d+ crore/i);
-      if (amountMatch) entities['Amount'] = amountMatch[0];
-      const upiMatch = text.match(/[\w.]+@[\w]+/);
-      if (upiMatch) entities['UPI ID'] = upiMatch[0];
+      for (const e of ai.entities) {
+        const key = e.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        entities[key] = e.value;
+      }
+      // Also add structured fields
+      if (ai.victim.mobile) entities['Victim Phone'] = ai.victim.mobile;
+      if (ai.accused.mobile && ai.accused.mobile !== '') entities['Accused Phone'] = ai.accused.mobile;
+      if (ai.incident.location) entities['Location'] = ai.incident.location;
+      if (ai.incident.date) entities['Date'] = ai.incident.date;
 
-      resolve({ crimeType, entities });
-    }, 800 + Math.random() * 500);
-  });
+      return { crimeType: ai.crimeType, entities, analysis: ai, aiPowered: true };
+    } catch (err) {
+      console.warn('AI extraction failed, using fallback:', err);
+    }
+  }
+  // Fallback to simulator
+  const result = _simulateEntityExtractionFallback(text);
+  return { ...result, aiPowered: false };
+}
+
+/* ─── Main legal analysis (tries AI, falls back to simulator) ─── */
+export async function simulateLegalAnalysis(narrative: string): Promise<{ suggestions: LegalSuggestion[]; judgments: Judgment[] }> {
+  if (isAIConfigured()) {
+    try {
+      const sections = getLegalSections();
+      const aiSuggestions = await suggestLegalSections(narrative, sections.map(s => ({
+        id: s.id, act: s.act, sectionNumber: s.sectionNumber,
+        title: s.title, description: s.description,
+        keywords: s.keywords, crimeTypes: s.crimeTypes,
+      })));
+
+      // Map AI results back to LegalSuggestion type
+      const suggestions: LegalSuggestion[] = aiSuggestions.map(ai => {
+        const section = sections.find(s => s.id === ai.sectionId);
+        return {
+          section: section || sections[0] || {} as LegalSection,
+          confidence: ai.confidence,
+          reasoning: ai.reasoning,
+          matchedKeywords: ai.matchedKeywords,
+        };
+      }).filter(s => s.section && s.section.id);
+
+      // Get AI-powered judgments
+      const crimeType = suggestions.length > 0 ? suggestions[0].section.title : 'General Offence';
+      const sectionIds = suggestions.map(s => s.section.id);
+
+      let judgments: Judgment[] = [];
+      try {
+        const aiJudgments = await findJudgments(crimeType, sectionIds);
+        // Convert AI judgments to our Judgment type
+        judgments = aiJudgments.map(j => ({
+          id: j.id,
+          title: j.title,
+          court: j.court,
+          year: j.year,
+          summary: `${j.summary}\n\nRelevance: ${j.relevance}`,
+          relevantSections: sectionIds,
+          citation: j.citation,
+        }));
+      } catch { /* judgments are optional */ }
+
+      // If AI found no suggestions, try fallback
+      if (suggestions.length === 0) {
+        return _simulateLegalAnalysisFallback(narrative);
+      }
+
+      return { suggestions, judgments };
+    } catch (err) {
+      console.warn('AI legal analysis failed, using fallback:', err);
+    }
+  }
+  return _simulateLegalAnalysisFallback(narrative);
+}
+
+/* ─── FALLBACK: Original keyword-based legal analysis ─── */
+function _simulateLegalAnalysisFallback(narrative: string): { suggestions: LegalSuggestion[]; judgments: Judgment[] } {
+  const lowerNarrative = narrative.toLowerCase();
+  const matched: LegalSuggestion[] = [];
+
+  for (const section of LEGAL_SECTIONS) {
+    const matchedKeywords = section.keywords.filter(kw => lowerNarrative.includes(kw));
+    if (matchedKeywords.length > 0 || section.crimeTypes.some(ct => lowerNarrative.includes(ct.toLowerCase()))) {
+      const confidence = Math.min(0.98, 0.6 + matchedKeywords.length * 0.1 + Math.random() * 0.1);
+      matched.push({
+        section,
+        confidence,
+        reasoning: `The complaint narrative contains keywords related to ${section.title}: ${matchedKeywords.join(', ') || section.crimeTypes[0] || 'related crime patterns'}. This section covers ${section.description.substring(0, 120)}...`,
+        matchedKeywords,
+      });
+    }
+  }
+
+  if (matched.length === 0) {
+    matched.push({
+      section: LEGAL_SECTIONS[0] || {} as LegalSection,
+      confidence: 0.55,
+      reasoning: 'General fraud indicators detected in the complaint narrative.',
+      matchedKeywords: ['fraud'],
+    });
+  }
+
+  matched.sort((a, b) => b.confidence - a.confidence);
+
+  const relevantJudgments = JUDGMENTS.filter(j =>
+    matched.some(m => j.relevantSections.includes(m.section.id))
+  );
+
+  return { suggestions: matched.slice(0, 5), judgments: relevantJudgments };
+}
+
+/* ─── FALLBACK: Original pattern-based entity extraction ─── */
+function _simulateEntityExtractionFallback(text: string): { crimeType: string; entities: Record<string, string> } {
+  const lower = text.toLowerCase();
+  let crimeType = 'General Offence';
+  if (lower.includes('scam') || lower.includes('fraud') || lower.includes('cheat')) crimeType = 'Cyber Fraud';
+  else if (lower.includes('theft') || lower.includes('steal') || lower.includes('stolen')) crimeType = 'Theft';
+  else if (lower.includes('identity') || lower.includes('fake profile') || lower.includes('impersonat')) crimeType = 'Identity Theft';
+  else if (lower.includes('forg') || lower.includes('fake document')) crimeType = 'Document Forgery';
+  else if (lower.includes('assault') || lower.includes('beat') || lower.includes('hurt') || lower.includes('attack')) crimeType = 'Assault';
+
+  const entities: Record<string, string> = {};
+  const phoneMatch = text.match(/(\+?\d[\d\s-]{9,})/);
+  if (phoneMatch) entities['Phone'] = phoneMatch[1].trim();
+  const amountMatch = text.match(/₹[\d,. lakhlakhcrore]+|Rs\.?\s*[\d,. lakhlakhcrore]+|\d+ lakh|\d+ crore/i);
+  if (amountMatch) entities['Amount'] = amountMatch[0];
+  const upiMatch = text.match(/[\w.]+@[\w]+/);
+  if (upiMatch) entities['UPI ID'] = upiMatch[0];
+
+  return { crimeType, entities };
 }
 
 /* ════════════════════════════════════════════
@@ -890,7 +1264,7 @@ export async function createNewUser(
   await db.createUser(userData);
 
   // Update local cache
-  USERS[id] = { id, name: fullName, role, badge: badgeNumber, station: stationName, email };
+  USERS[id] = { id, name: fullName, role, rank: getRoleDefaultRank(role), clearanceLevel: ROLE_CLEARANCE[role], badge: badgeNumber, station: stationName, email };
   _userStates[id] = { lastLogin: null, suspendedUntil: null, suspensionReason: '', active: true };
 
   addAuditLog('CREATE_USER', id, `Created user ${fullName} (${role})`, 'admin1');

@@ -132,6 +132,11 @@ export default function LegalIntel() {
                             ⚖️ <strong>Punishment:</strong> {s.section.punishment}
                           </div>
                         )}
+                        {s.section.legacyReference && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--brand-info)', marginTop: 4 }}>
+                            📜 <strong>Replaces:</strong> {s.section.legacyReference}
+                          </div>
+                        )}
                       </div>
                       <div style={{ textAlign: 'center', minWidth: 70 }}>
                         <div style={{
@@ -224,7 +229,7 @@ function SectionCard({ section: s }: { section: LegalSection }) {
     <div className="card" style={{ cursor: 'pointer' }} onClick={() => setExpanded(!expanded)}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className={`badge ${s.act === 'BNS' ? 'badge-primary' : s.act === 'BNSS' ? 'badge-info' : 'badge-warning'}`}>
+          <span className={`badge ${s.act === 'BNS' ? 'badge-primary' : s.act === 'BNSS' ? 'badge-info' : s.act === 'BSA' ? 'badge-warning' : s.act === 'IT Act' ? 'badge-success' : s.act === 'DPDP Act' ? 'badge-success' : s.act === 'POCSO' ? 'badge-danger' : 'badge-info'}`}>
             {s.act} {s.sectionNumber}
           </span>
           <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.title}</span>
@@ -254,6 +259,9 @@ function SectionCard({ section: s }: { section: LegalSection }) {
           )}
           {s.punishment && (
             <div style={{ fontSize: '0.82rem', color: 'var(--brand-warning)' }}>⚖️ <strong>Punishment:</strong> {s.punishment}</div>
+          )}
+          {s.legacyReference && (
+            <div style={{ fontSize: '0.78rem', color: 'var(--brand-info)', marginTop: 6 }}>📜 <strong>Replaces:</strong> {s.legacyReference}</div>
           )}
         </div>
       )}

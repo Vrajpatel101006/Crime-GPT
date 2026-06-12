@@ -5,7 +5,7 @@ import {
   Tag, Link2
 } from 'lucide-react';
 import {
-  getEvidence, addEvidence, getCases,
+  getEvidence, addEvidence, getAccessibleCases,
   generateUniqueId, formatDateTime, showToast, getCurrentUser,
   addDiaryEntry, hasPermission
 } from '../store';
@@ -25,13 +25,17 @@ export default function EvidencePage() {
   const [showUpload, setShowUpload] = useState(false);
   const [filterCase, setFilterCase] = useState('all');
   const [filterType, setFilterType] = useState('all');
-  const cases = getCases();
+  const cases = getAccessibleCases();
+  const accessibleCaseIds = new Set(cases.map(c => c.id));
 
   const refresh = useCallback(() => setEvidence(getEvidence()), []);
 
   const fileTypes = [...new Set(evidence.map(e => e.fileType))];
 
-  const filtered = evidence.filter(e => {
+  // Filter evidence to only show items from accessible cases
+  const accessibleEvidence = evidence.filter(e => accessibleCaseIds.has(e.caseId));
+
+  const filtered = accessibleEvidence.filter(e => {
     const matchSearch = !search ||
       e.fileName.toLowerCase().includes(search.toLowerCase()) ||
       e.tags.some(t => t.toLowerCase().includes(search.toLowerCase())) ||
@@ -144,7 +148,7 @@ export default function EvidencePage() {
 /* ─── UPLOAD MODAL ─── */
 function UploadModal({ onClose }: { onClose: () => void }) {
   const user = getCurrentUser();
-  const cases = getCases();
+  const cases = getAccessibleCases();
   const [caseId, setCaseId] = useState(cases[0]?.id || '');
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<File[]>([]);

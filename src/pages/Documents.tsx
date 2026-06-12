@@ -4,7 +4,7 @@ import {
   AlertCircle, Loader2, FileCheck, Printer
 } from 'lucide-react';
 import {
-  getCases, getDocumentsForCase, addDocument, generateUniqueId,
+  getAccessibleCases, getDocumentsForCase, addDocument, generateUniqueId,
   formatDateTime, showToast, getCurrentUser, addDiaryEntry, getLegalSections
 } from '../store';
 import type { CaseRecord, DocumentType, GeneratedDocument } from '../types';
@@ -13,6 +13,7 @@ const DOC_TYPES: { value: DocumentType; label: string; description: string }[] =
   { value: 'fir', label: 'First Information Report', description: 'Official FIR document for case registration' },
   { value: 'remand_request', label: 'Remand Request Letter', description: 'Request for judicial custody of accused' },
   { value: 'chargesheet', label: 'Chargesheet Draft', description: 'Complete chargesheet for court submission' },
+  { value: 'purvani_chargesheet', label: 'Purvani Chargesheet (Preliminary Report)', description: 'Preliminary intimation report to the Judicial Magistrate under Section 176 BNSS' },
   { value: 'seizure_receipt', label: 'Seizure Receipt', description: 'Receipt for seized evidence items' },
   { value: 'medical_letter', label: 'Medical Treatment Letter', description: 'Letter for victim medical examination' },
   { value: 'court_custody', label: 'Court Custody Letter', description: 'Letter for court custody extension' },
@@ -289,6 +290,141 @@ function generateDocContent(caseData: CaseRecord, docType: DocumentType): { cont
   <div class="doc-sig-block"><div class="doc-sig-line">${caseData.assignedOfficer}<br>Investigation Officer<br>Badge No: GP-4521<br>P.S. ${caseData.policeStation}</div></div>
 </div>
 <p class="doc-ref doc-mt">Date: ${today}<br>Place: Ahmedabad, Gujarat</p>
+`;
+      break;
+
+    case 'purvani_chargesheet':
+      content = `
+<div class="doc-header">
+  <div class="doc-emblem">Government of Gujarat &bull; Gujarat Police</div>
+  <div class="doc-title">Preliminary Report / Purvani Chargesheet</div>
+  <div class="doc-subtitle">(Under Section 176 of Bharatiya Nagarik Suraksha Sanhita, 2023)</div>
+</div>
+<div class="doc-meta">
+  <div><span class="doc-field">FIR No.:</span> ${caseData.firNumber}</div>
+  <div><span class="doc-field">Case No.:</span> ${caseData.caseNumber}</div>
+  <div><span class="doc-field">Police Station:</span> ${caseData.policeStation}</div>
+  <div><span class="doc-field">District:</span> Ahmedabad</div>
+  <div><span class="doc-field">Date of FIR:</span> ${caseData.incident.date}</div>
+  <div><span class="doc-field">Date of Report:</span> ${today}</div>
+</div>
+
+<p class="doc-center doc-mt"><strong>IN THE COURT OF THE JUDICIAL MAGISTRATE FIRST CLASS, AHMEDABAD</strong></p>
+
+<p class="doc-salutation"><strong>To,</strong><br>The Honourable Judicial Magistrate First Class,<br>Ahmedabad, Gujarat</p>
+
+<p><strong>Subject:</strong> Preliminary Report regarding FIR No. ${caseData.firNumber} registered at P.S. ${caseData.policeStation} on ${caseData.incident.date} — Reg.</p>
+
+<p><strong>Reference:</strong> Crime No. ${caseData.caseNumber}, P.S. ${caseData.policeStation}, Ahmedabad District</p>
+
+<p class="doc-salutation">Respected Sir/Madam,</p>
+
+<div class="doc-section">
+  <div class="doc-section-title">I. Complainant / Informant Details</div>
+  <dl class="doc-fields">
+    <dt>Name:</dt><dd>${caseData.victim.name}</dd>
+    ${caseData.victim.age ? `<dt>Age:</dt><dd>${caseData.victim.age}</dd>` : ''}
+    ${caseData.victim.gender ? `<dt>Gender:</dt><dd>${caseData.victim.gender}</dd>` : ''}
+    <dt>Address:</dt><dd>${caseData.victim.address}</dd>
+    <dt>Mobile:</dt><dd>${caseData.victim.mobile}</dd>
+    ${caseData.victim.email ? `<dt>Email:</dt><dd>${caseData.victim.email}</dd>` : ''}
+  </dl>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">II. Accused Details</div>
+  <dl class="doc-fields">
+    <dt>Name:</dt><dd>${caseData.accused.name}</dd>
+    <dt>Father's Name:</dt><dd>${caseData.accused.fatherName || 'Not yet ascertained'}</dd>
+    <dt>Address:</dt><dd>${caseData.accused.address || 'Not yet ascertained'}</dd>
+    <dt>Mobile:</dt><dd>${caseData.accused.mobile || 'Not yet ascertained'}</dd>
+  </dl>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">III. Details of the Offence</div>
+  <dl class="doc-fields">
+    <dt>Date of Incident:</dt><dd>${caseData.incident.date}</dd>
+    <dt>Time of Incident:</dt><dd>${caseData.incident.time}</dd>
+    <dt>Place of Occurrence:</dt><dd>${caseData.incident.location}</dd>
+    <dt>Crime Type:</dt><dd>${caseData.crimeType}</dd>
+    <dt>Cognizable / Non-Cognizable:</dt><dd>Cognizable</dd>
+  </dl>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">IV. Legal Sections Invoked</div>
+  <p>${sections || 'Investigation in progress; sections to be finalised upon completion of investigation.'}</p>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">V. Brief Facts of the Case</div>
+  <div class="doc-narrative">${caseData.incident.narrative}</div>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">VI. Initial Investigation Steps Taken</div>
+  <ol class="doc-numbered">
+    <li>FIR registered at P.S. ${caseData.policeStation} on ${caseData.incident.date} at ${caseData.incident.time || 'recorded time'} under the above-referenced sections.</li>
+    <li>Investigation commenced; spot visit conducted and scene of occurrence inspected.</li>
+    <li>Initial statement of the complainant / victim recorded.</li>
+    <li>Available physical and digital evidence identified, collected, and preserved with SHA-256 integrity hashing for chain-of-custody verification.</li>
+    <li>Senior officers of the station and the concerned Superintendent of Police duly intimated of the registration of the case and commencement of investigation.</li>
+    <li>Forensic expert visit arranged where required under Section 176(3) BNSS, 2023.</li>
+  </ol>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">VII. Evidence Identified / Seized So Far</div>
+  <dl class="doc-fields">
+    <dt>Total Evidence Items Collected:</dt><dd>${caseData.evidenceIds.length}</dd>
+  </dl>
+  <p>Further evidence, if any, shall be seized and documented in the course of ongoing investigation and reported in the final report under Section 193 BNSS.</p>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">VIII. Witnesses Identified So Far</div>
+  <table class="doc-table">
+    <thead><tr><th>Sr.</th><th>Name</th><th>Relation / Role</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>${caseData.victim.name}</td><td>Complainant / Victim</td></tr>
+      <tr><td>2</td><td>Panch Witness 1 (to be identified)</td><td>Independent Witness</td></tr>
+      <tr><td>3</td><td>Panch Witness 2 (to be identified)</td><td>Independent Witness</td></tr>
+    </tbody>
+  </table>
+  <p>Statements of all material witnesses shall be recorded under Section 180 BNSS, 2023 and annexed with the final report.</p>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">IX. Arrest Status</div>
+  <dl class="doc-fields">
+    <dt>Accused Arrested:</dt><dd>Investigation in progress — arrest status to be intimated separately.</dd>
+    <dt>Custody:</dt><dd>N/A at this stage</dd>
+  </dl>
+</div>
+
+<div class="doc-section">
+  <div class="doc-section-title">X. Report of the Investigation Officer</div>
+  <div class="doc-narrative">It is respectfully submitted that the investigation into the above-referenced FIR has been duly commenced and is being conducted diligently in accordance with the provisions of the Bharatiya Nagarik Suraksha Sanhita, 2023. The progress of investigation shall be intimated to the Honourable Court and the victim within ninety (90) days as mandated under Section 193(3)(ii) BNSS, 2023.
+
+A detailed Final Report / Chargesheet under Section 193 BNSS, 2023 shall be submitted to this Honourable Court upon completion of the investigation, setting forth the evidence collected, statements recorded, and the opinion of the Investigation Officer regarding the commission of the offence and the culpability of the accused.</div>
+</div>
+
+<div class="doc-signatures">
+  <div class="doc-sig-block"><div class="doc-sig-line">${caseData.assignedOfficer}<br>Investigation Officer<br>Badge No: GP-4521<br>P.S. ${caseData.policeStation}</div></div>
+  <div class="doc-sig-block"><div class="doc-sig-line">Signature of Officer-in-Charge<br>P.S. ${caseData.policeStation}</div></div>
+</div>
+<p class="doc-ref doc-mt">Date: ${today}<br>Place: Ahmedabad, Gujarat</p>
+
+<div class="doc-footer">
+  <strong>Copy forwarded to:</strong><br>
+  1. The Honourable Judicial Magistrate First Class, Ahmedabad (Original)<br>
+  2. Superintendent of Police, Ahmedabad (For information)<br>
+  3. Deputy Commissioner of Police, Cyber Crime Cell (For information)<br>
+  4. Case File / Station Record
+</div>
+
+<div class="doc-note">This Preliminary Report is submitted under Section 176 of the Bharatiya Nagarik Suraksha Sanhita, 2023, corresponding to Section 157 of the Code of Criminal Procedure, 1973 (since repealed). The contents of this report are preliminary and subject to revision upon completion of investigation.</div>
 `;
       break;
 
@@ -718,7 +854,7 @@ function generateDocContent(caseData: CaseRecord, docType: DocumentType): { cont
 }
 
 export default function Documents() {
-  const cases = getCases();
+  const cases = getAccessibleCases();
   const [selectedCase, setSelectedCase] = useState(cases[0]?.id || '');
   const [showGenerate, setShowGenerate] = useState(false);
   const [defaultDocType, setDefaultDocType] = useState<DocumentType>('fir');

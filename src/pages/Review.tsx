@@ -5,7 +5,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import {
-  getCases, updateCase, formatDateTime, showToast,
+  getAccessibleCases, updateCase, formatDateTime, showToast,
   getCurrentUser, getCurrentRole, addDiaryEntry, addAuditLog, generateUniqueId,
   getLegalSections, getEvidenceForCase
 } from '../store';
@@ -14,7 +14,7 @@ import type { CaseRecord, ReviewComment, LegalSection } from '../types';
 export default function Review() {
   const [, setTick] = useState(0);
   const role = getCurrentRole();
-  const cases = getCases();
+  const cases = getAccessibleCases();
   const refresh = () => setTick(t => t + 1);
 
   const pendingCases = cases.filter(c => {
@@ -33,26 +33,13 @@ export default function Review() {
         <div>
           <h1><CheckSquare size={28} style={{ color: 'var(--brand-primary-light)' }} /> Case Reviews</h1>
           <p className="text-sm text-muted" style={{ marginTop: 4 }}>
-            {role === 'sho' ? 'SHO Review Dashboard — Approve or return cases' :
-             role === 'legal' ? 'Legal Advisor Review — Validate legal sections and documents' :
+            {role === 'sho' ? 'SHO Review Dashboard — Approve or return cases for chargesheet' :
+             role === 'legal' ? 'Legal Advisor Review — Validate legal sections and document readiness' :
+             role === 'admin' ? 'Admin Review Oversight — Monitor all review workflows' :
              'Review workflow overview'}
           </p>
         </div>
       </div>
-
-      {/* Role Notice */}
-      {(role !== 'sho' && role !== 'legal') && (
-        <div style={{
-          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
-          borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-lg)',
-          display: 'flex', gap: 10, alignItems: 'center',
-        }}>
-          <AlertCircle size={18} style={{ color: 'var(--brand-warning)', flexShrink: 0 }} />
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Switch to <strong>SHO</strong> or <strong>Legal Advisor</strong> role using the top bar to access review actions.
-          </span>
-        </div>
-      )}
 
       {/* Stats */}
       <div className="stat-grid" style={{ marginBottom: 'var(--space-lg)' }}>
