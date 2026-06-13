@@ -163,6 +163,8 @@ The following enhancements are planned but not yet implemented:
 6. **SecurityAuditLog Implementation** — Dedicated security event log for access grants, denials, and classification changes (type defined, not yet wired)
 7. **CCTNS / BharatPol Mock API Integration** — Linkage to national crime database for cross-reference
 8. **Multilingual Full Support** — Gujarati and Hindi narrative processing (currently English-first with extraction support for all languages)
+9. **MinIO Object Storage Integration** — S3-compatible self-hosted storage with Object Locking (WORM) for court-admissible evidence immutability and legal hold compliance. Requires a Node.js backend API server for presigned URL generation and Docker deployment. Not suitable for current serverless architecture without adding a backend tier.
+10. **Cloudflare R2 Object Storage** — S3-compatible cloud storage with no egress fees and generous free tier (10 GB storage, 10M reads/month). Closer fit for serverless Vercel architecture than MinIO, with presigned URLs achievable via Cloudflare Workers (free tier). Target for production-grade evidence file storage.
 
 ---
 

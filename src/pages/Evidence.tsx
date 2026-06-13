@@ -1,13 +1,13 @@
 import { useState, useCallback, useRef } from 'react';
 import {
   Upload, Search, FileText, Image, Music, Film, Shield,
-  Hash, X, CheckCircle2,
+  Hash, X, CheckCircle2, Eye, EyeOff, Copy, Download,
   Tag, Link2
 } from 'lucide-react';
 import {
   getEvidence, addEvidence, getAccessibleCases,
   generateUniqueId, formatDateTime, showToast, getCurrentUser,
-  addDiaryEntry, hasPermission
+  addDiaryEntry, hasPermission, addCustodyEntry
 } from '../store';
 import type { Evidence, ExtractedEntity } from '../types';
 
@@ -39,7 +39,7 @@ export default function EvidencePage() {
     const matchSearch = !search ||
       e.fileName.toLowerCase().includes(search.toLowerCase()) ||
       e.tags.some(t => t.toLowerCase().includes(search.toLowerCase())) ||
-      e.sha256Hash.toLowerCase().includes(search.toLowerCase());
+      e.sha256Hash.substring(0, 8).toLowerCase().includes(search.toLowerCase());
     const matchCase = filterCase === 'all' || e.caseId === filterCase;
     const matchType = filterType === 'all' || e.fileType === filterType;
     return matchSearch && matchCase && matchType;
@@ -114,7 +114,7 @@ export default function EvidencePage() {
               {/* Hash Preview */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.7rem', color: 'var(--brand-success)' }}>
                 <CheckCircle2 size={12} />
-                SHA-256 Verified
+                <span>{ev.sha256Hash.substring(0, 8)}••••••••••••</span>
               </div>
 
               {/* Extracted Entities Count */}
@@ -146,6 +146,8 @@ export default function EvidencePage() {
 }
 
 /* ─── UPLOAD MODAL ─── */
+const MAX_FILE_SIZE_FOR_STORAGE = 2 * 1024 * 1024; // 2 MB — files above this stored as metadata only
+
 function UploadModal({ onClose }: { onClose: () => void }) {
   const user = getCurrentUser();
   const cases = getAccessibleCases();
@@ -175,6 +177,15 @@ function UploadModal({ onClose }: { onClose: () => void }) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   };
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const processFiles = useCallback(async () => {
     if (!caseId || files.length === 0) {
       showToast('Select a case and at least one file', 'warning');
@@ -185,6 +196,12 @@ function UploadModal({ onClose }: { onClose: () => void }) {
     for (const file of files) {
       const hash = await computeSHA256(file);
       const fileType = file.type.startsWith('image') ? 'image' : file.type.startsWith('audio') ? 'audio' : file.type.startsWith('video') ? 'video' : 'document';
+
+      // Store file content as base64 for files <= 2 MB
+      let fileData: string | undefined;
+      if (file.size <= MAX_FILE_SIZE_FOR_STORAGE) {
+        fileData = await fileToBase64(file);
+      }
 
       // Simulate OCR entity extraction
       const extractedEntities: ExtractedEntity[] = [];
@@ -215,6 +232,7 @@ function UploadModal({ onClose }: { onClose: () => void }) {
         tags,
         extractedEntities,
         mimeType: file.type,
+        fileData,
         chainOfCustody: [{
           action: 'uploaded',
           userId: user.id,
@@ -306,6 +324,38 @@ function UploadModal({ onClose }: { onClose: () => void }) {
 
 /* ─── EVIDENCE DETAIL MODAL ─── */
 function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; onClose: () => void }) {
+  const [hashRevealed, setHashRevealed] = useState(false);
+  const user = getCurrentUser();
+
+  // Log 'viewed' custody entry on modal open (once per open)
+  const viewedRef = useRef(false);
+  if (!viewedRef.current) {
+    viewedRef.current = true;
+    addCustodyEntry(ev.id, { action: 'viewed', userId: user.id, userName: user.name, timestamp: new Date().toISOString() });
+  }
+
+  const maskedHash = `${ev.sha256Hash.substring(0, 8)}${'\u2022'.repeat(20)}${ev.sha256Hash.slice(-4)}`;
+
+  const handleCopyHash = () => {
+    navigator.clipboard.writeText(ev.sha256Hash);
+    showToast('SHA-256 hash copied to clipboard', 'success');
+    setHashRevealed(true);
+    setTimeout(() => setHashRevealed(false), 10000);
+  };
+
+  const handleDownload = () => {
+    if (!ev.fileData) {
+      showToast('File content not stored — only metadata available', 'warning');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = ev.fileData;
+    link.download = ev.fileName;
+    link.click();
+    addCustodyEntry(ev.id, { action: 'downloaded', userId: user.id, userName: user.name, timestamp: new Date().toISOString() });
+    showToast(`${ev.fileName} downloaded`, 'success');
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
@@ -315,12 +365,43 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
               <span className="badge badge-primary">{ev.fileType}</span>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{(ev.fileSize / 1024).toFixed(0)} KB</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{formatDateTime(ev.uploadedAt)}</span>
             </div>
           </div>
           <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="modal-body">
+          {/* File Preview */}
+          {ev.fileData ? (
+            <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
+              <div className="card-title" style={{ marginBottom: 8 }}>File Preview</div>
+              {ev.fileType === 'image' && (
+                <img src={ev.fileData} alt={ev.fileName} style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 'var(--radius-md)', objectFit: 'contain', background: 'var(--surface-0)' }} />
+              )}
+              {ev.fileType === 'audio' && (
+                <audio controls src={ev.fileData} style={{ width: '100%' }} />
+              )}
+              {ev.fileType === 'video' && (
+                <video controls src={ev.fileData} style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 'var(--radius-md)' }} />
+              )}
+              {ev.fileType === 'document' && ev.mimeType === 'application/pdf' && (
+                <iframe src={ev.fileData} title={ev.fileName} style={{ width: '100%', height: 400, border: 'none', borderRadius: 'var(--radius-md)' }} />
+              )}
+              {ev.fileType === 'document' && ev.mimeType !== 'application/pdf' && (
+                <div style={{ padding: 16, background: 'var(--surface-0)', borderRadius: 'var(--radius-md)', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <FileText size={32} style={{ marginBottom: 8 }} />
+                  <div>Preview not available for {ev.mimeType}. Download to view.</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)', textAlign: 'center', padding: 'var(--space-lg)' }}>
+              <FileText size={32} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Preview unavailable — file {ev.fileSize > MAX_FILE_SIZE_FOR_STORAGE ? 'exceeds 2 MB storage limit' : 'content not stored'}</div>
+            </div>
+          )}
+
           {/* SHA-256 Hash */}
           <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -328,15 +409,26 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
               <span className="card-title">SHA-256 Integrity Hash</span>
               <CheckCircle2 size={14} style={{ color: 'var(--brand-success)' }} />
             </div>
-            <code style={{
-              display: 'block', padding: '10px 14px', borderRadius: 'var(--radius-md)',
-              background: 'var(--surface-0)', fontSize: '0.75rem', color: 'var(--brand-success)',
-              wordBreak: 'break-all', fontFamily: 'monospace',
-            }}>
-              {ev.sha256Hash}
-            </code>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <code style={{
+                flex: 1, padding: '10px 14px', borderRadius: 'var(--radius-md)',
+                background: 'var(--surface-0)', fontSize: '0.75rem', color: 'var(--brand-success)',
+                wordBreak: 'break-all', fontFamily: 'monospace', letterSpacing: hashRevealed ? 'normal' : '1px',
+              }}>
+                {hashRevealed ? ev.sha256Hash : maskedHash}
+              </code>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setHashRevealed(!hashRevealed); if (!hashRevealed) setTimeout(() => setHashRevealed(false), 10000); }} title={hashRevealed ? 'Hide hash' : 'Reveal hash'}>
+                  {hashRevealed ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button className="btn btn-ghost btn-sm btn-icon" onClick={handleCopyHash} title="Copy full hash">
+                  <Copy size={14} />
+                </button>
+              </div>
+            </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 6 }}>
               ✓ File integrity verified — tamper-proof evidence record
+              {hashRevealed && <span style={{ color: 'var(--brand-warning)', marginLeft: 8 }}>Hash revealed — auto-hides in 10s</span>}
             </div>
           </div>
 
@@ -375,12 +467,12 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
           {/* Chain of Custody */}
           <div className="card" style={{ background: 'var(--surface-1)' }}>
             <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Link2 size={16} style={{ color: 'var(--brand-accent)' }} /> Chain of Custody
+              <Link2 size={16} style={{ color: 'var(--brand-accent)' }} /> Chain of Custody ({ev.chainOfCustody.length} entries)
             </div>
             <div className="timeline">
               {ev.chainOfCustody.map((entry, i) => (
                 <div key={i} className="timeline-item">
-                  <div className={`timeline-dot ${entry.action === 'uploaded' ? 'success' : ''}`} />
+                  <div className={`timeline-dot ${entry.action === 'uploaded' ? 'success' : entry.action === 'viewed' ? '' : 'warning'}`} />
                   <div className="timeline-content" style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)', textTransform: 'capitalize' }}>{entry.action}</span>
@@ -392,6 +484,13 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={handleDownload} disabled={!ev.fileData} title={!ev.fileData ? 'File content not stored' : `Download ${ev.fileName}`}>
+            <Download size={16} /> Download
+          </button>
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>

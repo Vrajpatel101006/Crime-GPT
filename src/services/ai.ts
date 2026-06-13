@@ -432,6 +432,7 @@ function semanticScore(
 export async function suggestLegalSections(
   narrative: string,
   sections: Array<{ id: string; act: string; sectionNumber: string; title: string; description: string; keywords: string[]; crimeTypes: string[] }>,
+  crimeCategory?: string,
 ): Promise<AILegalSuggestion[]> {
   // Step 1: Semantic pre-filtering to reduce catalog size
   // Uses concept groups, synonyms, stemming, and fuzzy matching
@@ -450,10 +451,21 @@ export async function suggestLegalSections(
     }
   }
 
-  const scoredSections = sections.map(section => ({
-    section,
-    score: semanticScore(section, narrativeLower, narrativeWords, narrativeStems, matchedConcepts),
-  }));
+  // Category-based boost: give +15 to sections commonly associated with the selected crime category
+  const CATEGORY_BOOSTS: Record<string, string[]> = {
+    'Cyber Fraud': ['bns-318', 'bns-319', 'bns-336', 'it-66d', 'it-66', 'bns-340'],
+    'Identity Theft': ['bns-319', 'it-66c', 'it-66d', 'dpdp-9', 'it-66'],
+    'Financial Fraud': ['bns-318', 'bns-340', 'bns-338', 'it-66d', 'bns-336'],
+    'Hacking': ['it-43', 'it-66', 'it-66b', 'it-72', 'it-66d'],
+    'Drug Offence': ['ndps-8', 'ndps-15', 'ndps-20', 'ndps-21', 'bns-61'],
+  };
+  const boostedIds = crimeCategory && CATEGORY_BOOSTS[crimeCategory] ? CATEGORY_BOOSTS[crimeCategory] : [];
+
+  const scoredSections = sections.map(section => {
+    let score = semanticScore(section, narrativeLower, narrativeWords, narrativeStems, matchedConcepts);
+    if (boostedIds.includes(section.id)) score += 15;
+    return { section, score };
+  });
 
   // Take top 20 by score
   const withMatches = scoredSections.filter(s => s.score > 0);

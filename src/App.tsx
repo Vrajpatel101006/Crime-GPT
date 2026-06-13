@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, BookOpen, FileText,
@@ -19,15 +19,17 @@ import type { UserRole, Notification as NotifType } from './types';
 
 import Login from './pages/Login';
 import MatrixRain from './components/MatrixRain';
-import Dashboard from './pages/Dashboard';
-import Cases from './pages/Cases';
-import EvidencePage from './pages/Evidence';
-import LegalIntel from './pages/LegalIntel';
-import CaseDiary from './pages/CaseDiary';
-import Documents from './pages/Documents';
-import Review from './pages/Review';
-import AuditLogs from './pages/AuditLogs';
-import Admin from './pages/Admin';
+
+// Lazy-loaded pages for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Cases = lazy(() => import('./pages/Cases'));
+const EvidencePage = lazy(() => import('./pages/Evidence'));
+const LegalIntel = lazy(() => import('./pages/LegalIntel'));
+const CaseDiary = lazy(() => import('./pages/CaseDiary'));
+const Documents = lazy(() => import('./pages/Documents'));
+const Review = lazy(() => import('./pages/Review'));
+const AuditLogs = lazy(() => import('./pages/AuditLogs'));
+const Admin = lazy(() => import('./pages/Admin'));
 
 import './index.css';
 
@@ -424,6 +426,14 @@ function AppShell() {
       <div className="app-main" style={sidebarCollapsed ? { marginLeft: 'var(--sidebar-collapsed)' } : undefined}>
         <TopBar onMenuToggle={() => setSidebarCollapsed(!sidebarCollapsed)} sidebarCollapsed={sidebarCollapsed} />
         <main className="app-content">
+          <Suspense fallback={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: 12 }}>
+              <div className="confidence-bar" style={{ width: 200, height: 4 }}>
+                <div className="confidence-fill high" style={{ width: '60%', animation: 'pulse 1.5s ease-in-out infinite' }} />
+              </div>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Loading module...</span>
+            </div>
+          }>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/cases" element={<Cases />} />
@@ -436,6 +446,7 @@ function AppShell() {
             <Route path="/admin" element={<RoleGuard allowedRoles={ROUTE_ROLES['/admin']}><Admin /></RoleGuard>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
       <ToastContainer />

@@ -86,6 +86,7 @@ export interface Evidence {
   chainOfCustody: CustodyEntry[];
   mimeType: string;
   thumbnailUrl?: string;
+  fileData?: string;
 }
 
 export interface ExtractedEntity {

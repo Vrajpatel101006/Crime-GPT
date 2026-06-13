@@ -757,6 +757,7 @@ function hydrateEvidence(data: Record<string, any>): void {
     tags: e.tags || [],
     mimeType: e.mimeType,
     filePath: e.filePath,
+    fileData: e.fileData || undefined,
     extractedEntities: e.extractedEntities || [],
     chainOfCustody: e.chainOfCustody || [],
   }));
@@ -782,6 +783,19 @@ export function deleteEvidence(id: string): void {
   _evidence = _evidence.filter(e => e.id !== id);
   db.deleteEvidence(id);
   _evidenceListeners.forEach(l => l());
+}
+
+export function updateEvidence(id: string, updates: Partial<Evidence>): void {
+  _evidence = _evidence.map(e => e.id === id ? { ...e, ...updates } : e);
+  db.updateEvidence(id, updates);
+  _evidenceListeners.forEach(l => l());
+}
+
+export function addCustodyEntry(evidenceId: string, entry: { action: 'uploaded' | 'viewed' | 'downloaded' | 'approved' | 'shared'; userId: string; userName: string; timestamp: string }): void {
+  const ev = _evidence.find(e => e.id === evidenceId);
+  if (!ev) return;
+  const updatedChain = [...ev.chainOfCustody, entry];
+  updateEvidence(evidenceId, { chainOfCustody: updatedChain });
 }
 
 export function subscribeEvidence(listener: () => void): () => void {
@@ -933,7 +947,7 @@ export interface EnhancedEntityResult {
 }
 
 /* ─── Main entity extraction (tries AI, falls back to simulator) ─── */
-export async function simulateEntityExtraction(text: string): Promise<EnhancedEntityResult> {
+export async function simulateEntityExtraction(text: string, crimeCategory?: string): Promise<EnhancedEntityResult> {
   if (isAIConfigured()) {
     try {
       const ai = await analyzeComplaint(text);
@@ -950,18 +964,23 @@ export async function simulateEntityExtraction(text: string): Promise<EnhancedEn
       if (ai.incident.location) entities['Location'] = ai.incident.location;
       if (ai.incident.date) entities['Date'] = ai.incident.date;
 
-      return { crimeType: ai.crimeType, entities, analysis: ai, aiPowered: true };
+      // Use caller-provided category as override when AI returns generic result
+      const resolvedCrimeType = crimeCategory && ai.crimeType === 'General Offence'
+        ? crimeCategory
+        : ai.crimeType;
+
+      return { crimeType: resolvedCrimeType, entities, analysis: ai, aiPowered: true };
     } catch (err) {
       console.warn('AI extraction failed, using fallback:', err);
     }
   }
   // Fallback to simulator
-  const result = _simulateEntityExtractionFallback(text);
+  const result = _simulateEntityExtractionFallback(text, crimeCategory);
   return { ...result, aiPowered: false };
 }
 
 /* ─── Main legal analysis (tries AI, falls back to simulator) ─── */
-export async function simulateLegalAnalysis(narrative: string): Promise<{ suggestions: LegalSuggestion[]; judgments: Judgment[] }> {
+export async function simulateLegalAnalysis(narrative: string, crimeCategory?: string): Promise<{ suggestions: LegalSuggestion[]; judgments: Judgment[] }> {
   if (isAIConfigured()) {
     try {
       const sections = getLegalSections();
@@ -969,7 +988,7 @@ export async function simulateLegalAnalysis(narrative: string): Promise<{ sugges
         id: s.id, act: s.act, sectionNumber: s.sectionNumber,
         title: s.title, description: s.description,
         keywords: s.keywords, crimeTypes: s.crimeTypes,
-      })));
+      })), crimeCategory);
 
       // Map AI results back to LegalSuggestion type
       const suggestions: LegalSuggestion[] = aiSuggestions.map(ai => {
@@ -1051,14 +1070,16 @@ function _simulateLegalAnalysisFallback(narrative: string): { suggestions: Legal
 }
 
 /* ─── FALLBACK: Original pattern-based entity extraction ─── */
-function _simulateEntityExtractionFallback(text: string): { crimeType: string; entities: Record<string, string> } {
+function _simulateEntityExtractionFallback(text: string, crimeCategory?: string): { crimeType: string; entities: Record<string, string> } {
   const lower = text.toLowerCase();
-  let crimeType = 'General Offence';
-  if (lower.includes('scam') || lower.includes('fraud') || lower.includes('cheat')) crimeType = 'Cyber Fraud';
-  else if (lower.includes('theft') || lower.includes('steal') || lower.includes('stolen')) crimeType = 'Theft';
-  else if (lower.includes('identity') || lower.includes('fake profile') || lower.includes('impersonat')) crimeType = 'Identity Theft';
-  else if (lower.includes('forg') || lower.includes('fake document')) crimeType = 'Document Forgery';
-  else if (lower.includes('assault') || lower.includes('beat') || lower.includes('hurt') || lower.includes('attack')) crimeType = 'Assault';
+  let crimeType = crimeCategory || 'General Offence';
+  if (!crimeCategory) {
+    if (lower.includes('scam') || lower.includes('fraud') || lower.includes('cheat')) crimeType = 'Cyber Fraud';
+    else if (lower.includes('theft') || lower.includes('steal') || lower.includes('stolen')) crimeType = 'Theft';
+    else if (lower.includes('identity') || lower.includes('fake profile') || lower.includes('impersonat')) crimeType = 'Identity Theft';
+    else if (lower.includes('forg') || lower.includes('fake document')) crimeType = 'Document Forgery';
+    else if (lower.includes('assault') || lower.includes('beat') || lower.includes('hurt') || lower.includes('attack')) crimeType = 'Assault';
+  }
 
   const entities: Record<string, string> = {};
   const phoneMatch = text.match(/(\+?\d[\d\s-]{9,})/);
