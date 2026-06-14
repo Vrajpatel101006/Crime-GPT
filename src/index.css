@@ -1835,3 +1835,9 @@ a:hover { color: var(--brand-accent-light); }
   color: var(--cyber-green);
   text-shadow: 0 0 8px rgba(0, 255, 65, 0.4);
 }
+
+/* Alert Center pulse animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

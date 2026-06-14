@@ -8,17 +8,19 @@ import {
 import {
   getCurrentRole, getCurrentUser,
   subscribeRole, getIsOnline, toggleOnline, subscribeOnline,
-  getNotifications, markNotificationRead, getToasts,
+  getNotifications, subscribeNotifications, getToasts,
   subscribeToasts, getIsAuthenticated, subscribeAuth, logout, showToast,
   requestRoleSwitch, getPendingRoleSwitch, clearPendingRoleSwitch,
   initializeStore, getIsInitialized, subscribeInitialized,
   getUserRank, rankName, getAccessibleCases, subscribeCases,
+  getUnresolvedWorkflowEvents, subscribeWorkflowEvents,
 } from './store';
 import type { Toast } from './store';
-import type { UserRole, Notification as NotifType } from './types';
+import type { UserRole } from './types';
 
 import Login from './pages/Login';
 import MatrixRain from './components/MatrixRain';
+import AlertCenter from './components/AlertCenter';
 
 // Lazy-loaded pages for code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -35,7 +37,7 @@ import './index.css';
 
 /* ─── NAVIGATION ITEMS ─── */
 /* visibleTo controls which roles see each nav item — undefined = all roles */
-const NAV_ITEMS: Array<{ path?: string; icon?: any; label: string; badge?: number; section?: boolean; adminOnly?: boolean; visibleTo?: Array<'io' | 'sho' | 'legal' | 'admin'> }> = [
+const NAV_ITEMS: Array<{ path?: string; icon?: React.ComponentType<{ size?: number; className?: string }>; label: string; badge?: number; section?: boolean; adminOnly?: boolean; visibleTo?: Array<'io' | 'sho' | 'legal' | 'admin'> }> = [
   { label: 'Overview', section: true },
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { label: 'Investigation', section: true },
@@ -91,9 +93,8 @@ function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allo
 
 /* ─── TOAST RENDERER ─── */
 function ToastContainer() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>(() => getToasts());
   useEffect(() => {
-    setToasts(getToasts());
     return subscribeToasts(setToasts);
   }, []);
 
@@ -111,51 +112,7 @@ function ToastContainer() {
   );
 }
 
-/* ─── NOTIFICATIONS PANEL ─── */
-function NotificationsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [notifs, setNotifs] = useState<NotifType[]>([]);
-  useEffect(() => { setNotifs(getNotifications()); }, [open]);
-
-  if (!open) return null;
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
-        <div className="modal-header">
-          <h3>Notifications</h3>
-          <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="modal-body" style={{ padding: 0 }}>
-          {notifs.length === 0 && (
-            <div className="empty-state" style={{ padding: '32px' }}>
-              <p>No notifications</p>
-            </div>
-          )}
-          {notifs.map(n => (
-            <div
-              key={n.id}
-              style={{
-                padding: '14px 20px',
-                borderBottom: '1px solid var(--border-subtle)',
-                cursor: 'pointer',
-                background: n.read ? 'transparent' : 'rgba(201, 168, 76, 0.04)',
-              }}
-              onClick={() => { markNotificationRead(n.id); setNotifs(getNotifications()); }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {!n.read && <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--govt-gold)', flexShrink: 0, boxShadow: '0 0 6px rgba(201,168,76,0.5)' }} />}
-                <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{n.title}</span>
-              </div>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4 }}>{n.message}</p>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
-                {new Date(n.timestamp).toLocaleString('en-IN')}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+/* ─── ALERT CENTER (component: src/components/AlertCenter.tsx) ─── */
 
 /* ─── SIDEBAR ─── */
 function Sidebar({ collapsed }: { collapsed: boolean }) {
@@ -255,12 +212,20 @@ function TopBar({ onMenuToggle, sidebarCollapsed }: { onMenuToggle: () => void; 
   const [role, setRole] = useState<UserRole>(getCurrentRole());
   const [online, setOnline] = useState(getIsOnline());
   const [showNotifs, setShowNotifs] = useState(false);
-  const unreadCount = getNotifications().filter(n => !n.read).length;
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [escalationCount, setEscalationCount] = useState(0);
 
   useEffect(() => {
+    const updateCounts = () => {
+      setUnreadCount(getNotifications().filter(n => !n.read).length);
+      setEscalationCount(getUnresolvedWorkflowEvents().filter(e => e.category === 'escalation').length);
+    };
+    updateCounts();
+    const u1 = subscribeNotifications(updateCounts);
+    const u2 = subscribeWorkflowEvents(updateCounts);
     const unsub1 = subscribeRole(setRole);
     const unsub2 = subscribeOnline(setOnline);
-    return () => { unsub1(); unsub2(); };
+    return () => { unsub1(); unsub2(); u1(); u2(); };
   }, []);
 
   const handleRoleChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -309,10 +274,18 @@ function TopBar({ onMenuToggle, sidebarCollapsed }: { onMenuToggle: () => void; 
             {online ? <><Wifi size={13} /> Online</> : <><WifiOff size={13} /> Offline</>}
           </button>
 
-          {/* Notifications */}
-          <button className="topbar-icon-btn" onClick={() => setShowNotifs(true)}>
+          {/* Notifications - Alert Center */}
+          <button className="topbar-icon-btn" onClick={() => setShowNotifs(true)} style={{ position: 'relative' }}>
             <Bell size={18} />
             {unreadCount > 0 && <span className="badge-dot" />}
+            {escalationCount > 0 && (
+              <span style={{
+                position: 'absolute', top: 2, right: 2,
+                fontSize: '0.55rem', fontWeight: 700, padding: '1px 4px',
+                borderRadius: 6, background: '#FF3B3B', color: '#fff',
+                minWidth: 14, textAlign: 'center', lineHeight: '14px',
+              }}>{escalationCount}</span>
+            )}
           </button>
 
           {/* Settings — admin only */}
@@ -323,7 +296,7 @@ function TopBar({ onMenuToggle, sidebarCollapsed }: { onMenuToggle: () => void; 
           )}
         </div>
       </header>
-      <NotificationsPanel open={showNotifs} onClose={() => setShowNotifs(false)} />
+      <AlertCenter key={String(showNotifs)} open={showNotifs} onClose={() => setShowNotifs(false)} />
     </>
   );
 }

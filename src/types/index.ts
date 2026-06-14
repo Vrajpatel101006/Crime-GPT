@@ -198,6 +198,92 @@ export interface Notification {
   read: boolean;
   type: 'info' | 'success' | 'warning' | 'error';
   link?: string;
+  priority?: NotificationPriority;
+  workflowEventId?: string;
+  caseId?: string;
+  firNumber?: string;
+  actions?: NotificationAction[];
+  escalatedFrom?: string;
+  category?: NotificationCategory;
+  targetRoles?: UserRole[];
+  resolved?: boolean;
+  resolvedAt?: string;
+}
+
+export type NotificationPriority = 'critical' | 'high' | 'normal';
+
+export type NotificationCategory =
+  | 'workflow'
+  | 'approval'
+  | 'escalation'
+  | 'evidence'
+  | 'document'
+  | 'review'
+  | 'security'
+  | 'deadline'
+  | 'gap_alert'
+  | 'system';
+
+export interface NotificationAction {
+  label: string;
+  type: 'approve' | 'reject' | 'request_changes' | 'view' | 'acknowledge' | 'navigate';
+  payload?: string;
+}
+
+export type WorkflowEventType =
+  | 'case_created'
+  | 'case_assigned'
+  | 'case_status_changed'
+  | 'evidence_uploaded'
+  | 'evidence_updated'
+  | 'document_generated'
+  | 'document_submitted'
+  | 'document_approved'
+  | 'document_rejected'
+  | 'review_requested'
+  | 'review_completed'
+  | 'review_returned'
+  | 'escalation'
+  | 'gap_alert'
+  | 'deadline_reminder'
+  | 'security_alert'
+  | 'access_request'
+  | 'access_approved'
+  | 'access_rejected'
+  | 'user_suspended'
+  | 'system_alert';
+
+export interface EscalationRule {
+  afterHours: number;
+  escalateTo: UserRole[];
+  message: string;
+  priority: NotificationPriority;
+}
+
+export interface WorkflowEvent {
+  id: string;
+  eventType: WorkflowEventType;
+  caseId?: string;
+  firNumber?: string;
+  triggeredBy: string;
+  triggeredByName: string;
+  triggeredByRole: UserRole;
+  targetRoles: UserRole[];
+  targetUserIds?: string[];
+  priority: NotificationPriority;
+  title: string;
+  message: string;
+  safeMessage: string;
+  category: NotificationCategory;
+  actions?: NotificationAction[];
+  escalationRules?: EscalationRule[];
+  createdAt: string;
+  expiresAt?: string;
+  resolved?: boolean;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  linkedNotificationIds?: string[];
+  metadata?: Record<string, string>;
 }
 
 export interface Toast {

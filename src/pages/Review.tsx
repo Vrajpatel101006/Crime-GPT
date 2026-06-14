@@ -7,9 +7,10 @@ import {
 import {
   getAccessibleCases, updateCase, formatDateTime, showToast,
   getCurrentUser, getCurrentRole, addDiaryEntry, addAuditLog, generateUniqueId,
-  getLegalSections, getEvidenceForCase
+  getLegalSections, getEvidenceForCase, dispatchWorkflowEvent
 } from '../store';
 import type { CaseRecord, ReviewComment, LegalSection } from '../types';
+import * as wf from '../services/workflow';
 
 export default function Review() {
   const [, setTick] = useState(0);
@@ -161,7 +162,7 @@ function ReviewModal({ caseData, onClose, onAction }: { caseData: CaseRecord; on
       : 'pending_sho';
 
     updateCase(caseData.id, {
-      reviewStatus: newStatus as any,
+      reviewStatus: newStatus as CaseRecord['reviewStatus'],
       reviewComments: [...(caseData.reviewComments || []), reviewComment],
       status: newStatus === 'approved' ? 'approved' : caseData.status,
     });
@@ -177,6 +178,9 @@ function ReviewModal({ caseData, onClose, onAction }: { caseData: CaseRecord; on
     });
 
     addAuditLog(action === 'approve' ? 'APPROVE_CASE' : 'RETURN_CASE', caseData.id, `${user.name} ${action === 'approve' ? 'approved' : 'returned'} case ${caseData.firNumber}`, user.id);
+    // Workflow: dispatch review event to Alert Center
+    const wfAction = action === 'approve' ? 'approved' : 'returned';
+    dispatchWorkflowEvent(wf.buildReviewCompletedEvent(user, caseData.id, caseData.firNumber, wfAction, comment || (action === 'approve' ? 'Approved' : 'Returned')));
     showToast(`Case ${action === 'approve' ? 'approved' : 'returned'} successfully!`, action === 'approve' ? 'success' : 'warning');
     onAction();
     onClose();

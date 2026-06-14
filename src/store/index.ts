@@ -6,17 +6,21 @@
    Real-time listeners sync across devices.
    ============================================ */
 
-import { type User, type CaseRecord, type Evidence, type LegalSection, type Judgment, type AuditLog, type Notification, type Toast, type LegalSuggestion, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest } from '../types';
+import { type User, type CaseRecord, type Evidence, type LegalSection, type Judgment, type AuditLog, type Notification, type Toast, type LegalSuggestion, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest, type WorkflowEvent } from '../types';
 import { firebaseLogin, firebaseLogout, firebaseCreateUser, ensureDemoAuthUsers, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
 import * as db from '../services/db';
 import {
   SEED_LEGAL_SECTIONS, SEED_JUDGMENTS, SEED_USERS, SEED_ROLES,
   SEED_SETTINGS, SEED_CASES, SEED_EVIDENCE, SEED_DOCUMENTS,
   SEED_DIARY_ENTRIES, SEED_AUDIT_LOGS, SEED_NOTIFICATIONS,
+  SEED_WORKFLOW_EVENTS,
 } from '../data/seed';
 import { isAIConfigured, analyzeComplaint, suggestLegalSections, findJudgments, type AIAnalysisResult } from '../services/ai';
+import * as wf from '../services/workflow';
+import * as push from '../services/push';
 
 export type { Toast } from '../types';
+export type { WorkflowEvent, NotificationPriority, NotificationAction, NotificationCategory, WorkflowEventType } from '../types';
 
 /* ─── INITIALIZATION STATE ─── */
 let _isInitialized = false;
@@ -47,6 +51,7 @@ function hydrateFromLocalSeed(): void {
   hydrateAuditLogs(Object.fromEntries(SEED_AUDIT_LOGS.map(l => [l.id, l])));
   hydrateSettings(SEED_SETTINGS);
   _notifications = [...SEED_NOTIFICATIONS];
+  _workflowEvents = [...SEED_WORKFLOW_EVENTS];
 }
 
 export async function initializeStore(): Promise<void> {
@@ -136,7 +141,9 @@ export async function initializeStore(): Promise<void> {
     hydrateFromLocalSeed();
   }
 
+  push.syncPermissionState();
   _isInitialized = true;
+  startEscalationTimer();
   _initListeners.forEach(l => l());
 }
 
@@ -706,6 +713,14 @@ export function addCase(c: CaseRecord): void {
   db.createCase(secureCase);
   addAuditLog('CREATE_CASE', secureCase.id, `Created case ${secureCase.firNumber} for ${secureCase.crimeType} [${secureCase.classification.toUpperCase()}]`);
   _caseListeners.forEach(l => l());
+  // Workflow: notify SHO/admin of new case
+  const _cu = getCurrentUser();
+  dispatchWorkflowEvent(wf.buildCaseCreatedEvent(_cu, secureCase));
+  // Workflow: fire review_requested when case is submitted for review
+  if (secureCase.reviewStatus === 'pending_sho' || secureCase.reviewStatus === 'pending_legal') {
+    const reviewType = secureCase.reviewStatus === 'pending_sho' ? 'sho' : 'legal';
+    dispatchWorkflowEvent(wf.buildReviewRequestedEvent(_cu, secureCase.id, secureCase.firNumber, reviewType));
+  }
 }
 
 export function updateCase(id: string, updates: Partial<CaseRecord>): void {
@@ -777,6 +792,10 @@ export function addEvidence(e: Evidence): void {
   db.createEvidence(e);
   addAuditLog('UPLOAD_EVIDENCE', e.id, `Uploaded ${e.fileName} for ${e.caseId}`);
   _evidenceListeners.forEach(l => l());
+  // Workflow: notify IO/SHO of new evidence
+  const _eu = getCurrentUser();
+  const _ec = _cases.find(c => c.id === e.caseId);
+  dispatchWorkflowEvent(wf.buildEvidenceUploadedEvent(_eu, e.caseId, _ec?.firNumber || e.caseId, e.fileName));
 }
 
 export function deleteEvidence(id: string): void {
@@ -833,6 +852,10 @@ export function addDocument(d: GeneratedDocument): void {
   _documents = [d, ..._documents];
   db.createDocument(d);
   addAuditLog('GENERATE_DOC', d.id, `Generated ${d.title} for ${d.caseId}`);
+  // Workflow: notify of document generation
+  const _du = getCurrentUser();
+  const _dc = _cases.find(c => c.id === d.caseId);
+  dispatchWorkflowEvent(wf.buildWorkflowEvent({ eventType: 'document_generated', triggeredBy: _du.id, triggeredByName: _du.name, triggeredByRole: _du.role, caseId: d.caseId, firNumber: _dc?.firNumber || d.caseId, title: "Document Generated â€” " + (_dc?.firNumber || d.caseId), message: _du.name + " generated \"" + d.title + "\" for case " + (_dc?.firNumber || d.caseId) + ".", actions: [{ label: "View Document", type: "navigate", payload: "/documents" }] }));
 }
 
 /* ════════════════════════════════════════════
@@ -905,6 +928,233 @@ export function addNotification(n: Omit<Notification, 'id'>): void {
 export function subscribeNotifications(listener: () => void): () => void {
   _notifListeners.push(listener);
   return () => { _notifListeners = _notifListeners.filter(l => l !== listener); };
+}
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   WORKFLOW ENGINE â€” CrimeGPT Alert Center
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+let _workflowEvents: WorkflowEvent[] = [];
+let _wfEventListeners: Array<() => void> = [];
+let _escalationTimerId: ReturnType<typeof setInterval> | null = null;
+
+export function getWorkflowEvents(): WorkflowEvent[] {
+  return [..._workflowEvents].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+export function getWorkflowEventsForCase(caseId: string): WorkflowEvent[] {
+  return _workflowEvents.filter(e => e.caseId === caseId);
+}
+export function getUnresolvedWorkflowEvents(): WorkflowEvent[] {
+  return _workflowEvents.filter(e => !e.resolved);
+}
+export function subscribeWorkflowEvents(listener: () => void): () => void {
+  _wfEventListeners.push(listener);
+  return () => { _wfEventListeners = _wfEventListeners.filter(l => l !== listener); };
+}
+
+export function dispatchWorkflowEvent(event: WorkflowEvent): void {
+  _workflowEvents = [event, ..._workflowEvents];
+  db.update("/workflowEvents/" + event.id, event);
+  const ctx: wf.RecipientContext = { allUsers: USERS, currentUser: getCurrentUser(), caseRecord: event.caseId ? _cases.find(c => c.id === event.caseId) : undefined };
+  const recipientIds = wf.resolveRecipients(event, ctx);
+  const notifications = wf.generateNotificationsFromEvent(event, recipientIds);
+  event.linkedNotificationIds = notifications.map(n => n.id);
+  for (const notif of notifications) { _notifications = [notif, ..._notifications]; db.addNotification(notif); }
+  if (event.caseId) {
+    const de: DiaryEntry = { id: "de-wf-" + Date.now(), caseId: event.caseId, timestamp: event.createdAt, action: "Workflow: " + event.eventType.replace(/_/g, ' '), description: event.message, performedBy: event.triggeredByName, category: 'other' };
+    _cases = _cases.map(c => c.id === event.caseId ? { ...c, diaryEntries: [...c.diaryEntries, de] } : c);
+    db.updateMultiple({ ["/diaryEntries/" + event.caseId + "/" + de.id]: de });
+  }
+  addAuditLog("WF_" + event.eventType.toUpperCase(), event.caseId || 'system', event.triggeredByName + ": " + event.title, event.triggeredBy);
+  if (push.shouldSendOSNotification()) {
+    push.sendBrowserNotification({ title: event.title, safeMessage: event.safeMessage, priority: event.priority, caseId: event.caseId, firNumber: event.firNumber, tag: event.id, onClickUrl: event.caseId ? '/cases' : '/' });
+  }
+  push.playAlertSound(event.priority);
+  _notifListeners.forEach(l => l());
+  _wfEventListeners.forEach(l => l());
+  _caseListeners.forEach(l => l());
+}
+
+export function resolveWorkflowEvent(eventId: string, resolvedBy?: string): void {
+  _workflowEvents = _workflowEvents.map(e => e.id === eventId ? { ...e, resolved: true, resolvedAt: new Date().toISOString(), resolvedBy } : e);
+  const ev = _workflowEvents.find(e => e.id === eventId);
+  if (ev) db.update("/workflowEvents/" + eventId, { resolved: true, resolvedAt: new Date().toISOString(), resolvedBy });
+  _wfEventListeners.forEach(l => l());
+}
+
+export function resolveNotificationActions(actionType: string, payload?: string): void {
+  const user = getCurrentUser();
+  if (actionType === 'approve' && payload) {
+    const c = _cases.find(x => x.id === payload);
+    if (c) {
+      const ns = c.reviewStatus === 'pending_sho' ? 'pending_legal' : 'approved';
+      updateCase(payload, { reviewStatus: ns as any, status: ns === 'approved' ? 'approved' : c.status, reviewComments: [...(c.reviewComments || []), { id: generateUniqueId(), userId: user.id, userName: user.name, userRole: user.role, comment: 'Approved via Alert Center', timestamp: new Date().toISOString(), action: 'approve' as const }] });
+      dispatchWorkflowEvent(wf.buildReviewCompletedEvent(user, payload, c.firNumber, 'approved', 'Approved via Alert Center'));
+      showToast('Case approved successfully.', 'success');
+    }
+  } else if ((actionType === 'reject' || actionType === 'request_changes') && payload) {
+    const c = _cases.find(x => x.id === payload);
+    if (c) {
+      updateCase(payload, { reviewStatus: 'pending_sho' as any, reviewComments: [...(c.reviewComments || []), { id: generateUniqueId(), userId: user.id, userName: user.name, userRole: user.role, comment: actionType === 'reject' ? 'Rejected' : 'Changes requested', timestamp: new Date().toISOString(), action: 'return' as const }] });
+      dispatchWorkflowEvent(wf.buildReviewCompletedEvent(user, payload, c.firNumber, 'returned', actionType === 'reject' ? 'Rejected' : 'Changes requested'));
+      showToast(actionType === 'reject' ? 'Case rejected.' : 'Changes requested.', 'warning');
+    }
+  }
+}
+
+function startEscalationTimer(): void {
+  if (_escalationTimerId) clearInterval(_escalationTimerId);
+  _escalationTimerId = setInterval(() => {
+    const pending = getUnresolvedWorkflowEvents();
+    const all = getWorkflowEvents();
+    const escalations = wf.checkEscalations(pending, all);
+    for (const esc of escalations) { dispatchWorkflowEvent(esc); showToast("Escalation: " + esc.title, 'error'); }
+  }, 5 * 60 * 1000);
+}
+export function stopEscalationTimer(): void { if (_escalationTimerId) { clearInterval(_escalationTimerId); _escalationTimerId = null; } }
+
+export async function requestPushPermission(): Promise<boolean> { return push.requestPushPermission(); }
+export function isPushEnabled(): boolean { return push.isPushEnabled(); }
+export function getPushPermission(): string { return push.getNotificationPermission(); }
+
+export function flushOfflineWorkflowQueue(): void {
+  const events = wf.flushOfflineQueue();
+  for (const ev of events) dispatchWorkflowEvent(ev);
+  if (events.length > 0) showToast(events.length + " queued notification(s) delivered.", 'info');
+}
+
+/* ════════════════════════════════════════════
+   WORKFLOW EVENT CONVENIENCE WRAPPERS
+   Pages call these instead of importing wf directly.
+   ════════════════════════════════════════════ */
+
+export function fireCaseAssignedEvent(user: User, caseRecord: CaseRecord, assignedOfficerName: string): void {
+  dispatchWorkflowEvent(wf.buildCaseAssignedEvent(user, caseRecord, assignedOfficerName));
+}
+
+export function fireReviewRequestedEvent(user: User, caseId: string, firNumber: string, reviewType: 'sho' | 'legal'): void {
+  dispatchWorkflowEvent(wf.buildReviewRequestedEvent(user, caseId, firNumber, reviewType));
+}
+
+export function fireDocumentSubmittedEvent(user: User, caseId: string, firNumber: string, docTitle: string): void {
+  dispatchWorkflowEvent(wf.buildDocumentSubmittedEvent(user, caseId, firNumber, docTitle));
+}
+
+export function fireSecurityAlert(title: string, message: string): void {
+  dispatchWorkflowEvent(wf.buildSecurityAlertEvent(title, message));
+}
+
+export function fireGapAlertEvent(user: User, caseId: string, firNumber: string, gapDescription: string): void {
+  dispatchWorkflowEvent(wf.buildGapAlertEvent(user, caseId, firNumber, gapDescription));
+}
+
+export function fireDeadlineReminder(caseId: string, firNumber: string, deadlineType: string, daysRemaining: number): void {
+  dispatchWorkflowEvent(wf.buildDeadlineReminderEvent(caseId, firNumber, deadlineType, daysRemaining));
+}
+
+/* ════════════════════════════════════════════
+   BACKGROUND: DEADLINE REMINDER CHECKER
+   Scans active cases daily for approaching
+   statutory deadlines (90-day chargesheet,
+   24h remand, etc.)
+   ════════════════════════════════════════════ */
+
+let _deadlineTimerId: ReturnType<typeof setInterval> | null = null;
+const _firedDeadlineKeys = new Set<string>(); // prevent duplicate fires
+
+function checkDeadlines(): void {
+  const activeCases = _cases.filter(c => c.status === 'active' || c.status === 'under_review' || c.status === 'draft');
+  const now = Date.now();
+  for (const c of activeCases) {
+    if (!c.createdAt || !c.firNumber) continue;
+    const createdMs = new Date(c.createdAt).getTime();
+    const daysSinceCreation = Math.floor((now - createdMs) / (1000 * 60 * 60 * 24));
+
+    // 90-day chargesheet deadline (Section 193 BNSS)
+    const chargesheetDaysLeft = 90 - daysSinceCreation;
+    if (chargesheetDaysLeft >= 0 && chargesheetDaysLeft <= 7) {
+      const key = `${c.id}-chargesheet-${chargesheetDaysLeft <= 1 ? 'critical' : chargesheetDaysLeft <= 3 ? 'urgent' : 'soon'}`;
+      if (!_firedDeadlineKeys.has(key)) {
+        _firedDeadlineKeys.add(key);
+        dispatchWorkflowEvent(wf.buildDeadlineReminderEvent(c.id, c.firNumber, 'Chargesheet filing (Section 193 BNSS)', chargesheetDaysLeft));
+      }
+    }
+
+    // 60-day Purvani (preliminary report) deadline
+    const purvaniDaysLeft = 60 - daysSinceCreation;
+    if (purvaniDaysLeft >= 0 && purvaniDaysLeft <= 5) {
+      const key = `${c.id}-purvani-${purvaniDaysLeft <= 1 ? 'critical' : 'soon'}`;
+      if (!_firedDeadlineKeys.has(key)) {
+        _firedDeadlineKeys.add(key);
+        dispatchWorkflowEvent(wf.buildDeadlineReminderEvent(c.id, c.firNumber, 'Purvani report (Section 176 BNSS)', purvaniDaysLeft));
+      }
+    }
+  }
+}
+
+export function startDeadlineChecker(): void {
+  if (_deadlineTimerId) clearInterval(_deadlineTimerId);
+  checkDeadlines(); // run immediately on startup
+  _deadlineTimerId = setInterval(checkDeadlines, 60 * 60 * 1000); // then every hour
+}
+
+export function stopDeadlineChecker(): void {
+  if (_deadlineTimerId) { clearInterval(_deadlineTimerId); _deadlineTimerId = null; }
+}
+
+/* ════════════════════════════════════════════
+   BACKGROUND: INVESTIGATION GAP CHECKER
+   Runs periodically to detect cases with
+   missing evidence, no diary updates, or
+   low readiness scores.
+   ════════════════════════════════════════════ */
+
+let _gapTimerId: ReturnType<typeof setInterval> | null = null;
+const _firedGapKeys = new Set<string>();
+
+function checkInvestigationGaps(): void {
+  const activeCases = _cases.filter(c => c.status === 'active' || c.status === 'draft');
+  const now = Date.now();
+  for (const c of activeCases) {
+    if (!c.firNumber) continue;
+    const caseEvidence = _evidence.filter(e => e.caseId === c.id);
+    const lastDiary = c.diaryEntries?.length > 0
+      ? new Date(c.diaryEntries[c.diaryEntries.length - 1].timestamp).getTime()
+      : new Date(c.createdAt).getTime();
+    const daysSinceLastUpdate = Math.floor((now - lastDiary) / (1000 * 60 * 60 * 24));
+
+    // Gap: No evidence uploaded and case is > 3 days old
+    if (caseEvidence.length === 0 && daysSinceLastUpdate >= 3) {
+      const key = `${c.id}-no-evidence`;
+      if (!_firedGapKeys.has(key)) {
+        _firedGapKeys.add(key);
+        dispatchWorkflowEvent(wf.buildGapAlertEvent(
+          { id: 'system', name: 'CrimeGPT AI', role: 'admin' } as User,
+          c.id, c.firNumber, 'No evidence has been uploaded for this case despite being open for 3+ days'
+        ));
+      }
+    }
+
+    // Gap: Readiness score below 40% and case is > 7 days old
+    if ((c.readinessScore || 0) < 40 && daysSinceLastUpdate >= 7) {
+      const key = `${c.id}-low-readiness`;
+      if (!_firedGapKeys.has(key)) {
+        _firedGapKeys.add(key);
+        dispatchWorkflowEvent(wf.buildGapAlertEvent(
+          { id: 'system', name: 'CrimeGPT AI', role: 'admin' } as User,
+          c.id, c.firNumber, `Investigation readiness score is only ${c.readinessScore || 0}% after 7+ days — review required`
+        ));
+      }
+    }
+  }
+}
+
+export function startGapChecker(): void {
+  if (_gapTimerId) clearInterval(_gapTimerId);
+  checkInvestigationGaps(); // run on startup
+  _gapTimerId = setInterval(checkInvestigationGaps, 2 * 60 * 60 * 1000); // every 2 hours
+}
+
+export function stopGapChecker(): void {
+  if (_gapTimerId) { clearInterval(_gapTimerId); _gapTimerId = null; }
 }
 
 /* ════════════════════════════════════════════
@@ -1300,6 +1550,7 @@ export function getIsOnline(): boolean { return _isOnline; }
 export function toggleOnline(): void {
   _isOnline = !_isOnline;
   _onlineListeners.forEach(l => l(_isOnline));
+  if (_isOnline) { flushOfflineWorkflowQueue(); }
 }
 export function subscribeOnline(listener: (online: boolean) => void): () => void {
   _onlineListeners.push(listener);
@@ -1308,6 +1559,6 @@ export function subscribeOnline(listener: (online: boolean) => void): () => void
 
 // Listen for browser online/offline events
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { _isOnline = true; _onlineListeners.forEach(l => l(true)); });
+  window.addEventListener('online', () => { _isOnline = true; _onlineListeners.forEach(l => l(true)); flushOfflineWorkflowQueue(); });
   window.addEventListener('offline', () => { _isOnline = false; _onlineListeners.forEach(l => l(false)); });
 }
