@@ -23,6 +23,34 @@ const BADGE_PATH = '/favicon-16x16.png';
 /* ─── State ─── */
 let _permissionGranted = false;
 let _permissionRequested = false;
+// Cached service worker registration for reliable mobile notifications
+let _swReg: ServiceWorkerRegistration | null = null;
+
+/* ─── Cache SW registration on load ─── */
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      _swReg = (await navigator.serviceWorker.getRegistration()) ?? null;
+      if (_swReg) {
+        console.log('[CrimeGPT] SW registration cached:', _swReg.scope);
+      }
+    } catch {
+      // SW not available — fallback to new Notification()
+    }
+  });
+}
+
+/* ─── Refresh SW registration before sending (fixes race condition) ─── */
+async function refreshSwRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (_swReg) return _swReg;
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
+  try {
+    _swReg = (await navigator.serviceWorker.getRegistration()) ?? null;
+    return _swReg;
+  } catch {
+    return null;
+  }
+}
 
 /* ════════════════════════════════════════════
    PERMISSION MANAGEMENT
@@ -97,16 +125,59 @@ export interface PushPayload {
   onClickUrl?: string;
 }
 
-export function sendBrowserNotification(payload: PushPayload): boolean {
-  if (!_permissionGranted) return false;
-  if (typeof Notification === 'undefined') return false;
+export async function sendBrowserNotification(payload: PushPayload): Promise<boolean> {
+  if (!_permissionGranted) {
+    console.log('[CrimeGPT] Notification skipped: permission not granted');
+    return false;
+  }
+  if (typeof Notification === 'undefined') {
+    console.log('[CrimeGPT] Notification skipped: Notification API unavailable');
+    return false;
+  }
 
+  const priorityEmoji = payload.priority === 'critical' ? '🔴' : payload.priority === 'high' ? '🟡' : '🔵';
+  const firPrefix = payload.firNumber ? `[${payload.firNumber}] ` : '';
+  const title = `${priorityEmoji} ${firPrefix}${payload.title}`;
 
+  // ── Refresh SW registration (fixes race condition on first notification) ──
+  const swReg = await refreshSwRegistration();
+
+  // ── Primary path: Service Worker showNotification (mobile-reliable) ──
+  if (swReg && 'showNotification' in swReg) {
+    console.log('[CrimeGPT] Sending notification via Service Worker:', title);
+    const swOptions: NotificationOptions & { vibrate?: number[] } = {
+      body: payload.safeMessage,
+      icon: ICON_PATH,
+      badge: BADGE_PATH,
+      tag: payload.tag || `crimegpt-${payload.caseId || 'system'}`,
+      requireInteraction: payload.priority === 'critical',
+      silent: payload.priority === 'normal',
+      data: {
+        caseId: payload.caseId,
+        firNumber: payload.firNumber,
+        onClickUrl: payload.onClickUrl || '/',
+      },
+    };
+    if (payload.priority === 'critical' || payload.priority === 'high') {
+      swOptions.vibrate = payload.priority === 'critical' ? [200, 100, 200, 100, 200] : [100];
+    }
+    try {
+      await swReg.showNotification(title, swOptions);
+      console.log('[CrimeGPT] SW showNotification succeeded');
+    } catch (err) {
+      console.warn('[CrimeGPT] SW showNotification failed, falling back:', err);
+    }
+    // Trigger alert sound for critical/high
+    if (payload.priority === 'critical' || payload.priority === 'high') {
+      playAlertSound(payload.priority);
+    }
+    return true;
+  }
+
+  // ── Fallback path: new Notification() (desktop) ──
+  console.log('[CrimeGPT] Sending notification via new Notification():', title);
   try {
-    const priorityEmoji = payload.priority === 'critical' ? '🔴' : payload.priority === 'high' ? '🟡' : '🔵';
-    const firPrefix = payload.firNumber ? `[${payload.firNumber}] ` : '';
-
-    const notif = new Notification(`${priorityEmoji} ${firPrefix}${payload.title}`, {
+    const notif = new Notification(title, {
       body: payload.safeMessage,
       icon: ICON_PATH,
       badge: BADGE_PATH,
@@ -120,14 +191,12 @@ export function sendBrowserNotification(payload: PushPayload): boolean {
       },
     });
 
-    // Click handler — focus the app window
     notif.onclick = (event) => {
       event.preventDefault();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = (event.target as any)?.data;
       window.focus();
       if (data?.onClickUrl && window.location) {
-        // Navigate within the app if possible
         if (window.location.pathname !== data.onClickUrl) {
           window.location.hash = '';
           window.history.pushState({}, '', data.onClickUrl);
@@ -137,14 +206,13 @@ export function sendBrowserNotification(payload: PushPayload): boolean {
       notif.close();
     };
 
-    // Auto-close after timeout (unless critical)
     if (payload.priority !== 'critical') {
       setTimeout(() => notif.close(), 8000);
     }
 
     return true;
   } catch (err) {
-    console.warn('[CrimeGPT] Failed to send browser notification:', err);
+    console.warn('[CrimeGPT] new Notification() failed:', err);
     return false;
   }
 }
@@ -211,7 +279,11 @@ export function sendBatchNotification(payloads: PushPayload[]): number {
    ════════════════════════════════════════════ */
 
 export function shouldSendOSNotification(): boolean {
-  return _permissionGranted;
+  if (!_permissionGranted) return false;
+  // Removed mobile foreground block — OS notifications now fire
+  // regardless of app visibility. The SW showNotification handles
+  // display correctly on both foreground and background.
+  return true;
 }
 
 /* ════════════════════════════════════════════

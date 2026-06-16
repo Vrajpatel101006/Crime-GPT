@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>404 — CrimeGPT</title>
   <script src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.js"></script>
   <style>
@@ -22,8 +22,8 @@
       text-align: center;
     }
     dotlottie-player {
-      width: 320px;
-      height: 320px;
+      width: 340px;
+      height: 340px;
     }
     .msg {
       margin-top: 16px;
@@ -54,9 +54,7 @@
       border-radius: 2px;
       animation: fill 1.8s ease forwards;
     }
-    @keyframes fill {
-      to { width: 100%; }
-    }
+    @keyframes fill { to { width: 100%; } }
     .redirect-text {
       margin-top: 10px;
       font-size: 0.72rem;
@@ -76,22 +74,5 @@
     <div class="redirect-bar"><div class="redirect-fill"></div></div>
     <div class="redirect-text">Redirecting to CrimeGPT...</div>
   </div>
-
-  <script>
-    // GitHub Pages SPA fallback:
-    // Shows animation for 2s, then encodes /path → /?/path and redirects
-    // so React Router on index.html can restore the original route.
-    setTimeout(function() {
-      var pathSegmentsToKeep = 1;
-      var l = window.location;
-      l.replace(
-        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
-        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
-        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
-        l.hash
-      );
-    }, 2000);
-  </script>
 </body>
 </html>

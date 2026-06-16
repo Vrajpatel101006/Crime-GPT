@@ -65,7 +65,7 @@ export default function EvidencePage() {
           </select>
           <div className="search-box">
             <Search className="search-icon" size={16} />
-            <input placeholder="Search filename, tag, hash..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input placeholder="Search filename, tag, hash..." value={search} onChange={e => setSearch(e.target.value.slice(0, 200))} maxLength={200} />
           </div>
           <button className="btn btn-primary" onClick={() => setShowUpload(true)} disabled={!canUpload} title={!canUpload ? 'You do not have permission to upload evidence' : ''}>
             <Upload size={16} /> Upload Evidence
@@ -121,6 +121,7 @@ export default function EvidencePage() {
               {ev.extractedEntities.length > 0 && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
                   {ev.extractedEntities.length} entities extracted
+                  <span style={{ fontSize: '0.65rem', color: 'var(--brand-warning)', marginLeft: 6 }}>⚠ AI-extracted — verify manually</span>
                 </div>
               )}
             </div>

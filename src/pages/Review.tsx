@@ -262,14 +262,16 @@ function ReviewModal({ caseData, onClose, onAction }: { caseData: CaseRecord; on
           {/* Review Actions */}
           {canReview && (
             <div className="form-group">
-              <label className="form-label">Review Comment</label>
+              <label className="form-label">Review Comment <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(max 2000 chars)</span></label>
               <textarea
                 className="form-textarea"
                 rows={3}
+                maxLength={2000}
                 placeholder="Add your review comments..."
                 value={comment}
-                onChange={e => setComment(e.target.value)}
+                onChange={e => setComment(e.target.value.slice(0, 2000))}
               />
+              {comment.length > 1800 && <div style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{comment.length} / 2000</div>}
             </div>
           )}
         </div>

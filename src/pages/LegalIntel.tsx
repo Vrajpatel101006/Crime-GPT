@@ -93,11 +93,13 @@ export default function LegalIntel() {
             <textarea
               className="form-textarea"
               rows={4}
+              maxLength={5000}
               placeholder='Paste or type a complaint narrative, e.g., "Victim received a WhatsApp investment scam link and lost ₹2 lakh..."'
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={e => setQuery(e.target.value.slice(0, 5000))}
             />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <span style={{ fontSize: '0.72rem', color: query.length > 4800 ? 'var(--brand-warning)' : 'var(--text-muted)' }}>{query.length} / 5000</span>
               <button className="btn btn-primary" onClick={runAnalysis} disabled={isAnalyzing}>
                 {isAnalyzing ? <><Loader2 size={16} className="spin" /> Analyzing...</> : <><Sparkles size={16} /> Analyze with AI</>}
               </button>
@@ -173,9 +175,12 @@ export default function LegalIntel() {
                 </>
               )}
 
-              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginTop: 'var(--space-md)', display: 'flex', gap: 10, alignItems: 'center' }}>
-                <AlertCircle size={18} style={{ color: 'var(--brand-warning)', flexShrink: 0 }} />
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>AI recommendations only. Human officer approval is mandatory before applying legal sections.</span>
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginTop: 'var(--space-md)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <AlertCircle size={18} style={{ color: 'var(--brand-warning)', flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600 }}>⚠ AI Disclaimer</div>
+                  <span style={{ fontSize: '0.80rem', color: 'var(--text-secondary)' }}>AI analysis can make mistakes. Officers must verify all recommendations before proceeding. Final approval is mandatory.</span>
+                </div>
               </div>
             </>
           )}

@@ -180,7 +180,7 @@ function UsersTab() {
           </select>
           <div style={{ position: 'relative' }}>
             <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input className="form-input" placeholder="Search name, email, badge, station..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 32, width: 260 }} />
+            <input className="form-input" placeholder="Search name, email, badge, station..." value={search} onChange={e => setSearch(e.target.value.slice(0, 200))} maxLength={200} style={{ paddingLeft: 32, width: 260 }} />
           </div>
           <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
             <Plus size={16} /> Add User
@@ -352,12 +352,12 @@ function SuspendModal({ user, onSuspend, onCancel }: { user: AppUser; onSuspend:
           {duration === 'custom' && (
             <div className="form-group">
               <label>Custom Duration (days)</label>
-              <input className="form-input" type="number" min={1} max={365} value={customDays} onChange={e => setCustomDays(Number(e.target.value))} />
+              <input className="form-input" type="number" min={1} max={365} value={customDays} onChange={e => setCustomDays(Math.min(365, Math.max(1, Number(e.target.value) || 1)))} />
             </div>
           )}
           <div className="form-group">
-            <label>Reason for Suspension</label>
-            <input className="form-input" placeholder="e.g., Misconduct, investigation pending..." value={reason} onChange={e => setReason(e.target.value)} />
+            <label>Reason for Suspension <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(max 500 chars)</span></label>
+            <input className="form-input" placeholder="e.g., Misconduct, investigation pending..." value={reason} onChange={e => setReason(e.target.value.slice(0, 500))} maxLength={500} />
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Clock size={14} />
@@ -388,12 +388,13 @@ function UserEditModal({ user, onSave, onCancel }: { user: AppUser; onSave: (u: 
         </div>
         <div className="modal-body">
           <div className="form-group">
-            <label>Full Name</label>
-            <input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            <label>Full Name <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(letters only)</span></label>
+            <input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value.replace(/[0-9]/g, '') })} maxLength={80} />
           </div>
           <div className="form-group">
-            <label>Email</label>
+            <label>Email <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(@gujpol.gov.in)</span></label>
             <input className="form-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+            {form.email && !form.email.endsWith('@gujpol.gov.in') && <div style={{ fontSize: '0.72rem', color: 'var(--brand-danger)', marginTop: 3 }}>Must be a @gujpol.gov.in email</div>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group">
@@ -406,13 +407,13 @@ function UserEditModal({ user, onSave, onCancel }: { user: AppUser; onSave: (u: 
               </select>
             </div>
             <div className="form-group">
-              <label>Badge Number</label>
-              <input className="form-input" value={form.badge} onChange={e => setForm({ ...form, badge: e.target.value })} />
+              <label>Badge Number <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(letters, digits, hyphens)</span></label>
+              <input className="form-input" value={form.badge} onChange={e => setForm({ ...form, badge: e.target.value.replace(/[^A-Za-z0-9-]/g, '') })} maxLength={20} />
             </div>
           </div>
           <div className="form-group">
-            <label>Station</label>
-            <input className="form-input" value={form.station} onChange={e => setForm({ ...form, station: e.target.value })} />
+            <label>Station <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(max 100 chars)</span></label>
+            <input className="form-input" value={form.station} onChange={e => setForm({ ...form, station: e.target.value.slice(0, 100) })} maxLength={100} />
           </div>
         </div>
         <div className="modal-footer">
@@ -443,12 +444,13 @@ function UserAddModal({ onAdd, onCancel }: { onAdd: (u: AppUser) => void; onCanc
         </div>
         <div className="modal-body">
           <div className="form-group">
-            <label>Full Name</label>
-            <input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g., Insp. Rajesh Patel" />
+            <label>Full Name <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(letters only)</span></label>
+            <input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value.replace(/[0-9]/g, '') })} placeholder="e.g., Insp. Rajesh Patel" maxLength={80} />
           </div>
           <div className="form-group">
-            <label>Email</label>
+            <label>Email <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(@gujpol.gov.in)</span></label>
             <input className="form-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="e.g., rajesh.patel@gujpol.gov.in" />
+            {form.email && !form.email.endsWith('@gujpol.gov.in') && <div style={{ fontSize: '0.72rem', color: 'var(--brand-danger)', marginTop: 3 }}>Must be a @gujpol.gov.in email</div>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group">
@@ -461,13 +463,13 @@ function UserAddModal({ onAdd, onCancel }: { onAdd: (u: AppUser) => void; onCanc
               </select>
             </div>
             <div className="form-group">
-              <label>Badge Number</label>
-              <input className="form-input" value={form.badge} onChange={e => setForm({ ...form, badge: e.target.value })} placeholder="e.g., GP-1234" />
+              <label>Badge Number <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(letters, digits, hyphens)</span></label>
+              <input className="form-input" value={form.badge} onChange={e => setForm({ ...form, badge: e.target.value.replace(/[^A-Za-z0-9-]/g, '') })} placeholder="e.g., GP-1234" maxLength={20} />
             </div>
           </div>
           <div className="form-group">
-            <label>Station</label>
-            <input className="form-input" value={form.station} onChange={e => setForm({ ...form, station: e.target.value })} placeholder="e.g., Cybercrime PS, Ahmedabad" />
+            <label>Station <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(max 100 chars)</span></label>
+            <input className="form-input" value={form.station} onChange={e => setForm({ ...form, station: e.target.value.slice(0, 100) })} placeholder="e.g., Cybercrime PS, Ahmedabad" maxLength={100} />
           </div>
         </div>
         <div className="modal-footer">
@@ -615,12 +617,12 @@ function SettingsTab() {
             </label>
           </div>
           <div className="form-group">
-            <label>Session Timeout (minutes)</label>
-            <input className="form-input" type="number" value={settings.sessionTimeout} onChange={e => updateSetting('sessionTimeout', Number(e.target.value))} />
+            <label>Session Timeout (minutes) <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(1–1440)</span></label>
+            <input className="form-input" type="number" min={1} max={1440} value={settings.sessionTimeout} onChange={e => updateSetting('sessionTimeout', Math.min(1440, Math.max(1, Number(e.target.value) || 1)))} />
           </div>
           <div className="form-group">
-            <label>Max File Upload Size (MB)</label>
-            <input className="form-input" type="number" value={settings.maxFileSize} onChange={e => updateSetting('maxFileSize', Number(e.target.value))} />
+            <label>Max File Upload Size (MB) <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(1–500)</span></label>
+            <input className="form-input" type="number" min={1} max={500} value={settings.maxFileSize} onChange={e => updateSetting('maxFileSize', Math.min(500, Math.max(1, Number(e.target.value) || 1)))} />
           </div>
         </div>
 

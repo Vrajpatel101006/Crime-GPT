@@ -11,6 +11,7 @@ import {
   getNotifications, subscribeNotifications, getToasts,
   subscribeToasts, getIsAuthenticated, subscribeAuth, logout, showToast,
   requestRoleSwitch, getPendingRoleSwitch, clearPendingRoleSwitch,
+  getPushPermission,
   initializeStore, getIsInitialized, subscribeInitialized,
   getUserRank, rankName, getAccessibleCases, subscribeCases,
   getUnresolvedWorkflowEvents, subscribeWorkflowEvents,
@@ -115,7 +116,7 @@ function ToastContainer() {
 /* ─── ALERT CENTER (component: src/components/AlertCenter.tsx) ─── */
 
 /* ─── SIDEBAR ─── */
-function Sidebar({ collapsed }: { collapsed: boolean }) {
+function Sidebar({ collapsed, mobileOpen, isMobile }: { collapsed: boolean; mobileOpen: boolean; isMobile: boolean }) {
   const user = getCurrentUser();
   const userRank = getUserRank(user);
   const [, setTick] = useState(0);
@@ -137,7 +138,16 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
   };
 
   return (
-    <aside className="sidebar" style={collapsed ? { width: 'var(--sidebar-collapsed)' } : undefined}>
+    <aside
+      className={`sidebar${mobileOpen ? ' mobile-open' : ''}`}
+      style={
+        isMobile
+          ? undefined  // mobile: CSS handles transform via .mobile-open class
+          : collapsed
+            ? { width: 'var(--sidebar-collapsed)' }
+            : undefined
+      }
+    >
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="sidebar-logo-icon">
@@ -206,7 +216,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
 }
 
 /* ─── TOP BAR ─── */
-function TopBar({ onMenuToggle, sidebarCollapsed }: { onMenuToggle: () => void; sidebarCollapsed: boolean }) {
+function TopBar({ onMenuToggle, sidebarCollapsed, isMobile, mobileMenuOpen }: { onMenuToggle: () => void; sidebarCollapsed: boolean; isMobile: boolean; mobileMenuOpen: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(getCurrentRole());
@@ -243,7 +253,10 @@ function TopBar({ onMenuToggle, sidebarCollapsed }: { onMenuToggle: () => void; 
       <header className="topbar" style={sidebarCollapsed ? { left: 'var(--sidebar-collapsed)' } : undefined}>
         <div className="topbar-left">
           <button className="btn btn-ghost btn-icon" onClick={onMenuToggle}>
-            {sidebarCollapsed ? <Menu size={18} /> : <X size={18} />}
+            {isMobile
+              ? (mobileMenuOpen ? <X size={18} /> : <Menu size={18} />)
+              : (sidebarCollapsed ? <Menu size={18} /> : <X size={18} />)
+            }
           </button>
           <div className="topbar-breadcrumb">
             <span>CrimeGPT</span>
@@ -304,11 +317,31 @@ function TopBar({ onMenuToggle, sidebarCollapsed }: { onMenuToggle: () => void; 
 /* ─── MAIN APP ─── */
 function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)').matches : false
+  );
   const [isAuth, setIsAuth] = useState(getIsAuthenticated);
   const [pendingRole, setPendingRole] = useState<UserRole | null>(null);
   const [isReady, setIsReady] = useState(getIsInitialized);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Listen for screen size changes
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+      if (e.matches) setMobileMenuOpen(false); // close mobile menu on resize to mobile
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!getIsInitialized()) {
@@ -322,6 +355,14 @@ function AppShell() {
       setIsAuth(auth);
       if (!auth) {
         setPendingRole(getPendingRoleSwitch());
+      }
+      // After login, check if notification permission was denied
+      if (auth) {
+        setTimeout(() => {
+          if (getPushPermission() === 'denied') {
+            showToast('Notifications blocked. Enable them in browser settings to receive OS-level alerts.', 'warning', 6000);
+          }
+        }, 3500);
       }
     });
   }, []);
@@ -395,9 +436,36 @@ function AppShell() {
 
   return (
     <div className="app-layout">
-      <Sidebar collapsed={sidebarCollapsed} />
-      <div className="app-main" style={sidebarCollapsed ? { marginLeft: 'var(--sidebar-collapsed)' } : undefined}>
-        <TopBar onMenuToggle={() => setSidebarCollapsed(!sidebarCollapsed)} sidebarCollapsed={sidebarCollapsed} />
+      {/* Mobile backdrop overlay — closes menu on tap */}
+      {isMobile && mobileMenuOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+      <Sidebar collapsed={sidebarCollapsed} mobileOpen={isMobile && mobileMenuOpen} isMobile={isMobile} />
+      <div
+        className="app-main"
+        style={
+          isMobile
+            ? { marginLeft: 0 }
+            : sidebarCollapsed
+              ? { marginLeft: 'var(--sidebar-collapsed)' }
+              : undefined
+        }
+      >
+        <TopBar
+          onMenuToggle={() => {
+            if (isMobile) {
+              setMobileMenuOpen(o => !o);
+            } else {
+              setSidebarCollapsed(c => !c);
+            }
+          }}
+          sidebarCollapsed={sidebarCollapsed}
+          isMobile={isMobile}
+          mobileMenuOpen={mobileMenuOpen}
+        />
         <main className="app-content">
           <Suspense fallback={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: 12 }}>

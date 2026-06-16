@@ -780,10 +780,14 @@ function CreateCaseModal({ onClose }: { onClose: () => void }) {
                 <textarea
                   className="form-textarea"
                   rows={selectedCrimeCategory ? 10 : 6}
+                  maxLength={5000}
                   placeholder={selectedCrimeCategory ? 'Edit the template above with actual case details...' : 'e.g., "Victim received a WhatsApp investment scam link and lost ₹2 lakh from their HDFC account..."'}
                   value={narrative}
-                  onChange={e => setNarrative(e.target.value)}
+                  onChange={e => setNarrative(e.target.value.slice(0, 5000))}
                 />
+                <div style={{ textAlign: 'right', fontSize: '0.72rem', color: narrative.length > 4800 ? 'var(--brand-warning)' : 'var(--text-muted)', marginTop: 4 }}>
+                  {narrative.length} / 5000
+                </div>
               </div>
             </div>
           )}
@@ -987,9 +991,12 @@ function CreateCaseModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
-              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginTop: 'var(--space-md)', display: 'flex', gap: 10, alignItems: 'center' }}>
-                <AlertCircle size={18} style={{ color: 'var(--brand-warning)', flexShrink: 0 }} />
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>AI recommendations only. Officer approval is mandatory before proceeding.</span>
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginTop: 'var(--space-md)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <AlertCircle size={18} style={{ color: 'var(--brand-warning)', flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600 }}>⚠ AI Disclaimer</div>
+                  <span style={{ fontSize: '0.80rem', color: 'var(--text-secondary)' }}>AI analysis can make mistakes. Officers must verify all recommendations before proceeding. Final approval is mandatory.</span>
+                </div>
               </div>
             </div>
           )}
@@ -999,36 +1006,37 @@ function CreateCaseModal({ onClose }: { onClose: () => void }) {
             <div className="fade-in">
               <div className="form-row" style={{ marginBottom: 'var(--space-md)' }}>
                 <div className="form-group">
-                  <label className="form-label">Victim Name *</label>
-                  <input className="form-input" value={victimName} onChange={e => setVictimName(e.target.value)} placeholder="Full name" />
+                  <label className="form-label">Victim Name * <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(letters only)</span></label>
+                  <input className="form-input" value={victimName} onChange={e => setVictimName(e.target.value.replace(/[0-9]/g, ''))} placeholder="Full name" maxLength={100} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Victim Mobile *</label>
-                  <input className="form-input" value={victimMobile} onChange={e => setVictimMobile(e.target.value)} placeholder="+91..." />
+                  <label className="form-label">Victim Mobile * <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(numbers only)</span></label>
+                  <input className="form-input" inputMode="numeric" value={victimMobile} onChange={e => { const v = e.target.value.replace(/[^0-9+]/g, ''); setVictimMobile(v.slice(0, 15)); }} placeholder="+91..." maxLength={15} />
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
-                <label className="form-label">Victim Address</label>
-                <input className="form-input" value={victimAddress} onChange={e => setVictimAddress(e.target.value)} placeholder="Full address" />
+                <label className="form-label">Victim Address <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(max 300 chars)</span></label>
+                <input className="form-input" value={victimAddress} onChange={e => setVictimAddress(e.target.value.slice(0, 300))} placeholder="Full address" maxLength={300} />
+                {victimAddress.length > 250 && <div style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{victimAddress.length} / 300</div>}
               </div>
               <div className="form-row" style={{ marginBottom: 'var(--space-md)' }}>
                 <div className="form-group">
-                  <label className="form-label">Accused Name</label>
-                  <input className="form-input" value={accusedName} onChange={e => setAccusedName(e.target.value)} placeholder="If known" />
+                  <label className="form-label">Accused Name <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(letters only)</span></label>
+                  <input className="form-input" value={accusedName} onChange={e => setAccusedName(e.target.value.replace(/[0-9]/g, ''))} placeholder="If known" maxLength={100} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Accused Mobile</label>
-                  <input className="form-input" value={accusedMobile} onChange={e => setAccusedMobile(e.target.value)} placeholder="+91..." />
+                  <label className="form-label">Accused Mobile <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(numbers only)</span></label>
+                  <input className="form-input" inputMode="numeric" value={accusedMobile} onChange={e => { const v = e.target.value.replace(/[^0-9+]/g, ''); setAccusedMobile(v.slice(0, 15)); }} placeholder="+91..." maxLength={15} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Incident Date</label>
-                  <input className="form-input" type="date" value={incidentDate} onChange={e => setIncidentDate(e.target.value)} />
+                  <label className="form-label">Incident Date <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(no future dates)</span></label>
+                  <input className="form-input" type="date" value={incidentDate} max={new Date().toISOString().split('T')[0]} onChange={e => { if (e.target.value <= new Date().toISOString().split('T')[0]) setIncidentDate(e.target.value); }} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Incident Location</label>
-                  <input className="form-input" value={incidentLocation} onChange={e => setIncidentLocation(e.target.value)} placeholder="Location of the crime" />
+                  <label className="form-label">Incident Location <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(max 200 chars)</span></label>
+                  <input className="form-input" value={incidentLocation} onChange={e => setIncidentLocation(e.target.value.slice(0, 200))} placeholder="Location of the crime" maxLength={200} />
                 </div>
               </div>
 

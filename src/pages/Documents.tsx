@@ -850,6 +850,12 @@ A detailed Final Report / Chargesheet under Section 193 BNSS, 2023 shall be subm
 <div class="doc-signatures"><div class="doc-sig-block"><div class="doc-sig-line">${caseData.assignedOfficer}<br>Investigation Officer</div></div></div>`;
   }
 
+  // Append AI disclaimer footer to every generated document
+  content += `
+<div style="margin-top:32px;padding-top:12px;border-top:2px solid #f59e0b;font-size:0.78rem;color:#92400e;">
+  <strong>⚠ AI Disclaimer:</strong> This document was generated with AI-assisted analysis. AI can make mistakes. Officers must verify all content against official records before submission to court or any statutory authority.
+</div>`;
+
   return { content, errors };
 }
 

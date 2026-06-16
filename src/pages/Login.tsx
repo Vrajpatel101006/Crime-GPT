@@ -183,8 +183,9 @@ export default function Login({ onLogin, initialRole }: LoginProps) {
                 className="form-input"
                 type="email"
                 value={email}
-                onChange={e => { setEmail(e.target.value); setError(''); }}
+                onChange={e => { setEmail(e.target.value.slice(0, 100)); setError(''); }}
                 placeholder="officer@gujpol.gov.in"
+                maxLength={100}
                 style={{
                   paddingLeft: 38,
                   background: 'rgba(0, 0, 0, 0.45)',

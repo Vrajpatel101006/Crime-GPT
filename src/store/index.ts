@@ -1477,6 +1477,14 @@ export async function login(email: string, password: string, role: UserRole): Pr
     loadNotifications(userId);
 
     addAuditLog('LOGIN', role, `${USERS[userId]?.name || 'User'} logged in`, userId);
+
+    // Auto-request notification permission after successful login
+    setTimeout(() => {
+      push.requestPushPermission().then((granted) => {
+        console.log(`[CrimeGPT] Notification permission: ${granted ? 'granted' : 'denied'}`);
+      });
+    }, 1500);
+
     return { success: true };
   } catch (err: any) {
     _authLoading = false;
