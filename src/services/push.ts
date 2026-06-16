@@ -223,13 +223,13 @@ export async function sendBrowserNotification(payload: PushPayload): Promise<boo
    to avoid notification spam.
    ════════════════════════════════════════════ */
 
-export function sendBatchNotification(payloads: PushPayload[]): number {
+export async function sendBatchNotification(payloads: PushPayload[]): Promise<number> {
   if (payloads.length === 0) return 0;
   if (!_permissionGranted) return 0;
 
   // If only one, send directly
   if (payloads.length === 1) {
-    return sendBrowserNotification(payloads[0]) ? 1 : 0;
+    return (await sendBrowserNotification(payloads[0])) ? 1 : 0;
   }
 
   // Group by priority
@@ -241,7 +241,7 @@ export function sendBatchNotification(payloads: PushPayload[]): number {
 
   // Send critical individually
   for (const p of critical) {
-    if (sendBrowserNotification(p)) sent++;
+    if (await sendBrowserNotification(p)) sent++;
   }
 
   // Summarize high priority
@@ -253,7 +253,7 @@ export function sendBatchNotification(payloads: PushPayload[]): number {
       tag: 'crimegpt-high-batch',
       onClickUrl: '/',
     };
-    if (sendBrowserNotification(summary)) sent++;
+    if (await sendBrowserNotification(summary)) sent++;
   }
 
   // Summarize normal
@@ -265,7 +265,7 @@ export function sendBatchNotification(payloads: PushPayload[]): number {
       tag: 'crimegpt-normal-batch',
       onClickUrl: '/',
     };
-    if (sendBrowserNotification(summary)) sent++;
+    if (await sendBrowserNotification(summary)) sent++;
   }
 
   return sent;
