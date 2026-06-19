@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, BookOpen, FileText,
   CheckSquare, ScrollText, Bell, Settings, Upload,
-  Wifi, WifiOff, Scale, Menu, X, ChevronRight, LogOut, ShieldCheck
+  Wifi, WifiOff, Scale, Menu, X, ChevronRight, LogOut, ShieldCheck, Clock
 } from 'lucide-react';
 import {
   getCurrentRole, getCurrentUser,
@@ -15,6 +15,7 @@ import {
   initializeStore, getIsInitialized, subscribeInitialized,
   getUserRank, rankName, getAccessibleCases, subscribeCases,
   getUnresolvedWorkflowEvents, subscribeWorkflowEvents,
+  getSessionTimeoutMs, touchSession, restoreSession, clearSession,
 } from './store';
 import type { Toast } from './store';
 import type { UserRole } from './types';
@@ -22,6 +23,7 @@ import type { UserRole } from './types';
 import Login from './pages/Login';
 
 import AlertCenter from './components/AlertCenter';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Lazy-loaded pages for code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -314,6 +316,68 @@ function TopBar({ onMenuToggle, sidebarCollapsed, isMobile, mobileMenuOpen }: { 
   );
 }
 
+/* ─── IDLE TIMEOUT HOOK ─── */
+function useIdleTimeout(isAuth: boolean, onLogout: () => void) {
+  const [showWarning, setShowWarning] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warnTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef(60);
+
+  const resetTimers = useCallback(() => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (warnTimerRef.current) clearInterval(warnTimerRef.current);
+    setShowWarning(false);
+    countdownRef.current = 60;
+    setCountdown(60);
+
+    idleTimerRef.current = setTimeout(() => {
+      setShowWarning(true);
+      countdownRef.current = 60;
+      setCountdown(60);
+      warnTimerRef.current = setInterval(() => {
+        countdownRef.current -= 1;
+        setCountdown(countdownRef.current);
+        if (countdownRef.current <= 0) {
+          if (warnTimerRef.current) clearInterval(warnTimerRef.current);
+          onLogout();
+        }
+      }, 1000);
+    }, getSessionTimeoutMs());
+  }, [onLogout]);
+
+  useEffect(() => {
+    if (!isAuth) return;
+    const EVENTS = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'] as const;
+    const handleActivity = () => {
+      touchSession();
+      resetTimers();
+    };
+    const handleVisibility = () => {
+      if (document.hidden) {
+        // Pause: clear timers while tab is hidden
+        if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+        if (warnTimerRef.current) clearInterval(warnTimerRef.current);
+      } else {
+        // Resume: restart from fresh activity
+        touchSession();
+        resetTimers();
+      }
+    };
+    EVENTS.forEach(e => document.addEventListener(e, handleActivity, { passive: true }));
+    document.addEventListener('visibilitychange', handleVisibility);
+    resetTimers(); // start initial timer
+    return () => {
+      EVENTS.forEach(e => document.removeEventListener(e, handleActivity));
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (warnTimerRef.current) clearInterval(warnTimerRef.current);
+    };
+  }, [isAuth, resetTimers]);
+
+  return { showWarning, countdown };
+}
+
 /* ─── MAIN APP ─── */
 function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -350,6 +414,23 @@ function AppShell() {
     }
     return subscribeInitialized(() => setIsReady(true));
   }, []);
+
+  // Auto-login on refresh if stored session is still valid
+  useEffect(() => {
+    if (isReady && !getIsAuthenticated()) {
+      if (restoreSession()) {
+        setIsAuth(true);
+      }
+    }
+  }, [isReady]);
+
+  // Idle timeout — logs out after sessionTimeout minutes of inactivity
+  const handleIdleLogout = useCallback(() => {
+    clearSession();
+    logout();
+    showToast('Logged out due to inactivity. Please sign in again.', 'warning', 6000);
+  }, []);
+  const { showWarning, countdown } = useIdleTimeout(isAuth, handleIdleLogout);
 
   useEffect(() => {
     return subscribeAuth((auth) => {
@@ -449,6 +530,7 @@ function AppShell() {
           mobileMenuOpen={mobileMenuOpen}
         />
         <main className="app-content">
+          <ErrorBoundary>
           <Suspense fallback={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: 12 }}>
               <div className="confidence-bar" style={{ width: 200, height: 4 }}>
@@ -470,9 +552,52 @@ function AppShell() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
       <ToastContainer />
+
+      {/* Idle session timeout warning — auto-dismisses on any user activity */}
+      {showWarning && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 500,
+            background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: 'var(--surface-1)', borderRadius: 'var(--radius-xl)',
+            padding: '40px 48px', textAlign: 'center', maxWidth: 380, width: '100%',
+            border: '1px solid var(--border-default)', boxShadow: 'var(--shadow-xl)',
+            animation: 'slideUp 0.25s ease',
+          }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: '50%', margin: '0 auto 20px',
+              background: countdown <= 10 ? 'rgba(211,47,47,0.1)' : 'rgba(237,108,2,0.1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Clock size={26} style={{ color: countdown <= 10 ? 'var(--brand-danger)' : 'var(--brand-warning)' }} />
+            </div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Session Expiring
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 20 }}>
+              You will be automatically logged out due to inactivity.
+            </p>
+            <div style={{
+              fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-mono)',
+              color: countdown <= 10 ? 'var(--brand-danger)' : 'var(--brand-warning)',
+              marginBottom: 20,
+            }}>
+              {countdown}s
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Move your mouse or press any key to stay logged in.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

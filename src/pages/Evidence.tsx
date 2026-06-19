@@ -8,7 +8,7 @@ import {
 import {
   getEvidence, addEvidence, getAccessibleCases,
   generateUniqueId, formatDateTime, showToast, getCurrentUser,
-  addDiaryEntry, hasPermission, addCustodyEntry
+  addDiaryEntry, hasPermission, addCustodyEntry, getSettings
 } from '../store';
 import type { Evidence, ExtractedEntity } from '../types';
 
@@ -150,6 +150,29 @@ export default function EvidencePage() {
 /* ─── UPLOAD MODAL ─── */
 const MAX_FILE_SIZE_FOR_STORAGE = 2 * 1024 * 1024; // 2 MB — files above this stored as metadata only
 
+/**
+ * Filters an array of files against the configured maxFileSize.
+ * Shows a toast for each rejected file. Returns only files within the limit.
+ */
+function filterFilesByMaxSize(incoming: File[]): File[] {
+  const maxBytes = (getSettings().maxFileSize || 100) * 1024 * 1024;
+  const accepted: File[] = [];
+  const rejected: string[] = [];
+  for (const f of incoming) {
+    if (f.size > maxBytes) {
+      rejected.push(f.name);
+    } else {
+      accepted.push(f);
+    }
+  }
+  if (rejected.length > 0) {
+    const limitMB = Math.round(maxBytes / (1024 * 1024));
+    const names = rejected.length <= 3 ? rejected.join(', ') : `${rejected.length} files`;
+    showToast(`${names} exceeds the ${limitMB} MB upload limit`, 'error', 5000);
+  }
+  return accepted;
+}
+
 function UploadModal({ onClose }: { onClose: () => void }) {
   const user = getCurrentUser();
   const cases = getAccessibleCases();
@@ -162,13 +185,14 @@ function UploadModal({ onClose }: { onClose: () => void }) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const dropped = Array.from(e.dataTransfer.files);
-    setFiles(prev => [...prev, ...dropped]);
+    const dropped = filterFilesByMaxSize(Array.from(e.dataTransfer.files));
+    if (dropped.length > 0) setFiles(prev => [...prev, ...dropped]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+      const selected = filterFilesByMaxSize(Array.from(e.target.files));
+      if (selected.length > 0) setFiles(prev => [...prev, ...selected]);
     }
   };
 
@@ -287,7 +311,7 @@ function UploadModal({ onClose }: { onClose: () => void }) {
           >
             <Upload className="upload-zone-icon" />
             <h3 style={{ fontSize: '1rem', color: 'var(--text-primary)', marginBottom: 4 }}>Drop files here or click to browse</h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Images, PDFs, Audio, Video — Max 50MB per file</p>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Images, PDFs, Audio, Video — Max {getSettings().maxFileSize} MB per file</p>
             <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileSelect} accept="image/*,application/pdf,audio/*,video/*" />
           </div>
 

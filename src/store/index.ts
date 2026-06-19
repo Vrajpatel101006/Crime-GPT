@@ -22,6 +22,69 @@ import * as push from '../services/push';
 export type { Toast } from '../types';
 export type { WorkflowEvent, NotificationPriority, NotificationAction, NotificationCategory, WorkflowEventType } from '../types';
 
+/* ─── RUNTIME DATA VALIDATION ─── */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HydrationError = { entity: string; id: string; reason: string; timestamp: string };
+type FieldValidator = { required: string[]; defaults: Record<string, any> };
+const _hydrationErrors: HydrationError[] = [];
+
+function logHydrationSkip(entity: string, id: string, reason: string): void {
+  const entry: HydrationError = { entity, id: id || '<unknown>', reason, timestamp: new Date().toISOString() };
+  _hydrationErrors.push(entry);
+  console.warn(`[CrimeGPT] Skipped invalid ${entity} record (${entry.id}): ${reason}`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function validateRecord(entity: string, raw: any, schema: FieldValidator): any | null {
+  if (!raw || typeof raw !== 'object') {
+    logHydrationSkip(entity, '<non-object>', 'Record is null or not an object');
+    return null;
+  }
+  for (const field of schema.required) {
+    if (raw[field] === undefined || raw[field] === null) {
+      logHydrationSkip(entity, String(raw.id ?? ''), `Missing required field: ${field}`);
+      return null;
+    }
+  }
+  const out = { ...raw };
+  for (const [key, fallback] of Object.entries(schema.defaults)) {
+    if (out[key] === undefined || out[key] === null) {
+      out[key] = Array.isArray(fallback) ? [...fallback] : (typeof fallback === 'object' ? { ...fallback } : fallback);
+    }
+  }
+  return out;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function validateBatch(entity: string, data: Record<string, any>, schema: FieldValidator): any[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const valid: any[] = [];
+  for (const raw of Object.values(data)) {
+    const v = validateRecord(entity, raw, schema);
+    if (v !== null) valid.push(v);
+  }
+  return valid;
+}
+
+const SCHEMAS: Record<string, FieldValidator> = {
+  user:            { required: ['id'], defaults: { role: 'io', badge: '', station: '', email: '', name: '', rank: undefined, clearanceLevel: undefined } },
+  legalSection:    { required: ['id', 'act', 'sectionNumber'], defaults: { title: '', description: '', keywords: [], crimeTypes: [], evidence_required: [], relatedSections: [], punishment: '', legacyReference: '' } },
+  judgment:        { required: ['id', 'title'], defaults: { court: '', year: 0, summary: '', relevantSections: [], citation: '' } },
+  case:            { required: ['id', 'firNumber', 'status'], defaults: { caseNumber: '', policeStation: '', assignedOfficer: '', assignedStation: '', classification: 'confidential', clearanceRequired: 1, crimeType: '', createdAt: '', updatedAt: '', victim: {}, accused: {}, incident: {}, evidenceIds: [], legalSectionIds: [], documentIds: [], diaryEntries: [], readinessScore: 0, reviewStatus: 'pending_io', reviewComments: [] } },
+  evidence:        { required: ['id', 'caseId', 'fileName'], defaults: { fileType: '', fileSize: 0, uploadedAt: '', uploadedBy: '', sha256Hash: '', tags: [], mimeType: '', filePath: '', fileData: undefined, extractedEntities: [], chainOfCustody: [] } },
+  document:        { required: ['id', 'caseId', 'type', 'title'], defaults: { content: '', generatedAt: '', generatedBy: '', status: 'draft', validationErrors: [], version: 1 } },
+  auditLog:        { required: ['id', 'action', 'timestamp'], defaults: { userId: 'system', userName: 'System', userRole: 'io', target: '', details: '' } },
+};
+
+const SETTINGS_ALLOWLIST: ReadonlySet<string> = new Set([
+  'autoSaveInterval', 'sessionTimeout', 'maxFileSize',
+  'encryptionEnabled', 'offlineMode', 'autoBackup',
+  'emailNotifications', 'smsAlerts', 'darkMode',
+  'language', 'policeStation', 'district', 'state', 'firPrefix',
+]);
+
+export function getHydrationErrors(): HydrationError[] { return [..._hydrationErrors]; }
+
 /* ─── INITIALIZATION STATE ─── */
 let _isInitialized = false;
 let _initListeners: Array<() => void> = [];
@@ -143,7 +206,14 @@ export async function initializeStore(): Promise<void> {
 
   push.syncPermissionState();
   _isInitialized = true;
+  // Clear any existing timers first (safe on first run; essential on HMR reload)
+  stopEscalationTimer();
+  stopDeadlineChecker();
+  stopGapChecker();
+  // Start all background tasks
   startEscalationTimer();
+  startDeadlineChecker();
+  startGapChecker();
   _initListeners.forEach(l => l());
 }
 
@@ -187,10 +257,11 @@ let USERS: Record<string, User> = {};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateUsers(data: Record<string, any>): void {
+  const valid = validateBatch('user', data, SCHEMAS.user);
   USERS = {};
-  for (const [id, u] of Object.entries(data)) {
-    USERS[id] = {
-      id,
+  for (const u of valid) {
+    USERS[u.id as string] = {
+      id: u.id,
       name: u.fullName || u.name,
       role: u.role,
       rank: u.rank || undefined,
@@ -567,7 +638,7 @@ export interface SystemSettings {
 }
 
 let _settings: SystemSettings = {
-  autoSaveInterval: 5, sessionTimeout: 30, maxFileSize: 50,
+  autoSaveInterval: 5, sessionTimeout: 30, maxFileSize: 100,
   encryptionEnabled: true, offlineMode: true, autoBackup: true,
   emailNotifications: true, smsAlerts: false, darkMode: false,
   language: 'English', policeStation: 'Cybercrime PS, Ahmedabad',
@@ -577,8 +648,14 @@ let _settingsListeners: Array<() => void> = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateSettings(data: any): void {
-  if (!data) return;
-  _settings = { ..._settings, ...data };
+  if (!data || typeof data !== 'object') return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const safe: Record<string, any> = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (SETTINGS_ALLOWLIST.has(key)) { safe[key] = val; }
+    else { logHydrationSkip('settings', key, `Rejected unknown setting key: ${key}`); }
+  }
+  _settings = { ..._settings, ...safe };
   _settingsListeners.forEach(l => l());
 }
 
@@ -603,17 +680,17 @@ let LEGAL_SECTIONS: LegalSection[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateLegalSections(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  LEGAL_SECTIONS = Object.values(data).map((s: any) => ({
+  const valid = validateBatch('legalSection', data, SCHEMAS.legalSection);
+  LEGAL_SECTIONS = valid.map((s: any) => ({
     id: s.id,
     act: s.act,
     sectionNumber: s.sectionNumber,
     title: s.title,
     description: s.description,
-    keywords: s.keywords || [],
-    crimeTypes: s.crimeTypes || [],
-    evidence_required: s.evidence_required || [],
-    relatedSections: s.relatedSections || [],
+    keywords: s.keywords,
+    crimeTypes: s.crimeTypes,
+    evidence_required: s.evidence_required,
+    relatedSections: s.relatedSections,
     punishment: s.punishment,
     legacyReference: s.legacyReference,
   }));
@@ -630,14 +707,14 @@ let JUDGMENTS: Judgment[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateJudgments(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  JUDGMENTS = Object.values(data).map((j: any) => ({
+  const valid = validateBatch('judgment', data, SCHEMAS.judgment);
+  JUDGMENTS = valid.map((j: any) => ({
     id: j.id,
     title: j.title,
     court: j.court,
     year: j.year,
     summary: j.summary,
-    relevantSections: j.relevantSections || [],
+    relevantSections: j.relevantSections,
     citation: j.citation,
   }));
 }
@@ -682,16 +759,16 @@ function mergeDiaryEntriesIntoCases(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateCases(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _cases = Object.values(data).map((c: any) => ({
+  const valid = validateBatch('case', data, SCHEMAS.case);
+  _cases = valid.map((c: any) => ({
     id: c.id,
     firNumber: c.firNumber,
     caseNumber: c.caseNumber,
     policeStation: c.policeStation,
     assignedOfficer: c.assignedOfficer,
     assignedStation: c.assignedStation || c.policeStation,
-    classification: c.classification || 'confidential',
-    clearanceRequired: c.clearanceRequired || 1,
+    classification: c.classification,
+    clearanceRequired: c.clearanceRequired,
     status: c.status,
     crimeType: c.crimeType,
     createdAt: c.createdAt,
@@ -699,13 +776,13 @@ function hydrateCases(data: Record<string, any>): void {
     victim: c.victim,
     accused: c.accused,
     incident: c.incident,
-    evidenceIds: c.evidenceIds || [],
-    legalSectionIds: c.legalSectionIds || [],
-    documentIds: c.documentIds || [],
-    diaryEntries: c.diaryEntries || [],
-    readinessScore: c.readinessScore || 0,
-    reviewStatus: c.reviewStatus || 'pending_io',
-    reviewComments: c.reviewComments || [],
+    evidenceIds: c.evidenceIds,
+    legalSectionIds: c.legalSectionIds,
+    documentIds: c.documentIds,
+    diaryEntries: c.diaryEntries,
+    readinessScore: c.readinessScore,
+    reviewStatus: c.reviewStatus,
+    reviewComments: c.reviewComments,
   }));
   _caseListeners.forEach(l => l());
 }
@@ -778,8 +855,8 @@ let _evidence: Evidence[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateEvidence(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _evidence = Object.values(data).map((e: any) => ({
+  const valid = validateBatch('evidence', data, SCHEMAS.evidence);
+  _evidence = valid.map((e: any) => ({
     id: e.id,
     caseId: e.caseId,
     fileName: e.fileName,
@@ -788,12 +865,12 @@ function hydrateEvidence(data: Record<string, any>): void {
     uploadedAt: e.uploadedAt,
     uploadedBy: e.uploadedBy,
     sha256Hash: e.sha256Hash,
-    tags: e.tags || [],
+    tags: e.tags,
     mimeType: e.mimeType,
     filePath: e.filePath,
-    fileData: e.fileData || undefined,
-    extractedEntities: e.extractedEntities || [],
-    chainOfCustody: e.chainOfCustody || [],
+    fileData: e.fileData,
+    extractedEntities: e.extractedEntities,
+    chainOfCustody: e.chainOfCustody,
   }));
   _evidenceListeners.forEach(l => l());
 }
@@ -848,18 +925,18 @@ let _documents: GeneratedDocument[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateDocuments(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _documents = Object.values(data).map((d: any) => ({
+  const valid = validateBatch('document', data, SCHEMAS.document);
+  _documents = valid.map((d: any) => ({
     id: d.id,
     caseId: d.caseId,
     type: d.type,
     title: d.title,
-    content: d.content || '',
+    content: d.content,
     generatedAt: d.generatedAt,
     generatedBy: d.generatedBy,
     status: d.status,
-    validationErrors: d.validationErrors || [],
-    version: d.version || 1,
+    validationErrors: d.validationErrors,
+    version: d.version,
   }));
 }
 
@@ -876,7 +953,7 @@ export function addDocument(d: GeneratedDocument): void {
   // Workflow: notify of document generation
   const _du = getCurrentUser();
   const _dc = _cases.find(c => c.id === d.caseId);
-  dispatchWorkflowEvent(wf.buildWorkflowEvent({ eventType: 'document_generated', triggeredBy: _du.id, triggeredByName: _du.name, triggeredByRole: _du.role, caseId: d.caseId, firNumber: _dc?.firNumber || d.caseId, title: "Document Generated â€” " + (_dc?.firNumber || d.caseId), message: _du.name + " generated \"" + d.title + "\" for case " + (_dc?.firNumber || d.caseId) + ".", actions: [{ label: "View Document", type: "navigate", payload: "/documents" }] }));
+  dispatchWorkflowEvent(wf.buildWorkflowEvent({ eventType: 'document_generated', triggeredBy: _du.id, triggeredByName: _du.name, triggeredByRole: _du.role, caseId: d.caseId, firNumber: _dc?.firNumber || d.caseId, title: "Document Generated — " + (_dc?.firNumber || d.caseId), message: _du.name + " generated \"" + d.title + "\" for case " + (_dc?.firNumber || d.caseId) + ".", actions: [{ label: "View Document", type: "navigate", payload: "/documents" }] }));
 }
 
 /* ════════════════════════════════════════════
@@ -886,8 +963,8 @@ let _auditLogs: AuditLog[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateAuditLogs(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _auditLogs = Object.values(data).map((l: any) => ({
+  const valid = validateBatch('auditLog', data, SCHEMAS.auditLog);
+  _auditLogs = valid.map((l: any) => ({
     id: l.id,
     userId: l.userId,
     userName: l.userName,
@@ -952,9 +1029,9 @@ export function subscribeNotifications(listener: () => void): () => void {
   _notifListeners.push(listener);
   return () => { _notifListeners = _notifListeners.filter(l => l !== listener); };
 }
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   WORKFLOW ENGINE â€” CrimeGPT Alert Center
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ════════════════════════════════════════════
+   WORKFLOW ENGINE — CrimeGPT Alert Center
+   ════════════════════════════════════════════ */
 let _workflowEvents: WorkflowEvent[] = [];
 let _wfEventListeners: Array<() => void> = [];
 let _escalationTimerId: ReturnType<typeof setInterval> | null = null;
@@ -1211,7 +1288,7 @@ export function getToasts(): Toast[] {
    AI ENGINE — Groq LLM + Fallback Simulators
    ════════════════════════════════════════════ */
 
-export function getIsAIConfigured(): boolean { return isAIConfigured(); }
+export async function getIsAIConfigured(): Promise<boolean> { return isAIConfigured(); }
 
 /* ─── Enhanced return type for entity extraction ─── */
 export interface EnhancedEntityResult {
@@ -1223,7 +1300,7 @@ export interface EnhancedEntityResult {
 
 /* ─── Main entity extraction (tries AI, falls back to simulator) ─── */
 export async function simulateEntityExtraction(text: string, crimeCategory?: string): Promise<EnhancedEntityResult> {
-  if (isAIConfigured()) {
+  if (await isAIConfigured()) {
     try {
       const ai = await analyzeComplaint(text);
 
@@ -1256,7 +1333,7 @@ export async function simulateEntityExtraction(text: string, crimeCategory?: str
 
 /* ─── Main legal analysis (tries AI, falls back to simulator) ─── */
 export async function simulateLegalAnalysis(narrative: string, crimeCategory?: string): Promise<{ suggestions: LegalSuggestion[]; judgments: Judgment[] }> {
-  if (isAIConfigured()) {
+  if (await isAIConfigured()) {
     try {
       const sections = getLegalSections();
       const aiSuggestions = await suggestLegalSections(narrative, sections.map(s => ({
@@ -1498,6 +1575,9 @@ export async function login(email: string, password: string, role: UserRole): Pr
     _authListeners.forEach(l => l(true));
     _roleListeners.forEach(l => l(role));
 
+    // Persist session for auto-login on refresh
+    persistSession();
+
     // Load notifications for this user
     loadNotifications(userId);
 
@@ -1522,6 +1602,7 @@ export async function login(email: string, password: string, role: UserRole): Pr
 export async function logout(): Promise<void> {
   const user = getCurrentUser();
   addAuditLog('LOGOUT', _currentRole, `${user?.name || 'User'} logged out`);
+  clearSession();
   await firebaseLogout();
   _isAuthenticated = false;
   _authListeners.forEach(l => l(false));
@@ -1538,6 +1619,7 @@ let _pendingRoleSwitch: UserRole | null = null;
 export function requestRoleSwitch(newRole: UserRole): void {
   const user = getCurrentUser();
   addAuditLog('LOGOUT', _currentRole, `${user?.name || 'User'} logged out (role switch to ${newRole.toUpperCase()})`);
+  clearSession();
   _isAuthenticated = false;
   _pendingRoleSwitch = newRole;
   _authListeners.forEach(l => l(false));
@@ -1576,6 +1658,100 @@ export async function createNewUser(
   return { success: true };
 }
 
+/* ════════════════════════════════════════════
+   SESSION PERSISTENCE (auto-login on refresh)
+   ════════════════════════════════════════════ */
+
+const SESSION_STORAGE_KEY = 'crimegpt_session';
+
+interface StoredSession {
+  role: UserRole;
+  userId: string;
+  loginTime: number;
+  lastActivity: number;
+}
+
+export function getSessionTimeoutMs(): number {
+  return (_settings.sessionTimeout || 30) * 60 * 1000;
+}
+
+export function persistSession(): void {
+  const now = Date.now();
+  const session: StoredSession = {
+    role: _currentRole,
+    userId: _currentUserId,
+    loginTime: now,
+    lastActivity: now,
+  };
+  try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session)); } catch { /* storage full or blocked */ }
+}
+
+export function clearSession(): void {
+  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* noop */ }
+}
+
+export function getStoredSession(): StoredSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as StoredSession;
+  } catch { return null; }
+}
+
+/**
+ * Updates the lastActivity timestamp in localStorage.
+ * Called on every user interaction while authenticated.
+ */
+export function touchSession(): void {
+  const stored = getStoredSession();
+  if (stored) {
+    stored.lastActivity = Date.now();
+    try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored)); } catch { /* noop */ }
+  }
+}
+
+/**
+ * Attempts to restore an authenticated session from localStorage.
+ * Returns true if session is valid and was restored, false otherwise.
+ * Called once on app init (page refresh).
+ */
+export function restoreSession(): boolean {
+  const stored = getStoredSession();
+  if (!stored) return false;
+
+  // Check session hasn't expired
+  const elapsed = Date.now() - stored.lastActivity;
+  if (elapsed > getSessionTimeoutMs()) {
+    clearSession();
+    return false;
+  }
+
+  // Check user still exists and is not suspended
+  const user = USERS[stored.userId];
+  if (!user) { clearSession(); return false; }
+
+  const uState = _userStates[stored.userId];
+  if (uState?.suspendedUntil && new Date(uState.suspendedUntil) > new Date()) {
+    clearSession();
+    return false;
+  }
+  if (uState && !uState.active && !uState.suspendedUntil) {
+    clearSession();
+    return false;
+  }
+
+  // Restore in-memory auth state (Firebase Auth is handled separately)
+  _isAuthenticated = true;
+  _currentRole = stored.role;
+  _currentUserId = stored.userId;
+  _authListeners.forEach(l => l(true));
+  _roleListeners.forEach(l => l(stored.role));
+
+  // Refresh lastActivity to now (user just opened the app)
+  touchSession();
+
+  return true;
+}
 /* ─── NETWORK STATE (local) ─── */
 let _isOnline = navigator.onLine;
 let _onlineListeners: Array<(online: boolean) => void> = [];

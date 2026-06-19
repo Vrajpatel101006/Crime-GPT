@@ -4,56 +4,63 @@
    Uses Groq (Llama 3.3 70B) for intelligent
    complaint analysis, entity extraction, and
    legal section mapping.
+
+   SECURITY: All AI calls are routed through the
+   serverless proxy at /api/analyze. The Groq API
+   key lives server-side only and is never embedded
+   in the client bundle.
    ============================================ */
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const PROXY_URL = '/api/analyze';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
-function getApiKey(): string {
-  return import.meta.env.VITE_GROQ_API_KEY || '';
+/**
+ * Checks whether the AI proxy is available and
+ * has a server-side API key configured.
+ */
+export async function isAIConfigured(): Promise<boolean> {
+  try {
+    const res = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ systemPrompt: 'ping', userPrompt: 'ping' }),
+    });
+    // 503 = proxy exists but no API key configured
+    // 200/400/502 = proxy is operational
+    return res.status !== 503;
+  } catch {
+    return false;
+  }
 }
 
-export function isAIConfigured(): boolean {
-  return !!getApiKey();
-}
-
-/* ─── Generic Groq API caller ─── */
+/* ─── Generic AI caller (via serverless proxy) ─── */
 async function callGroq<T = Record<string, unknown>>(
   systemPrompt: string,
   userPrompt: string,
   temperature = 0.15,
   maxTokens = 2048,
 ): Promise<T> {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('Groq API key not configured');
-
-  const response = await fetch(GROQ_API_URL, {
+  const response = await fetch(PROXY_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
+      systemPrompt,
+      userPrompt,
       temperature,
-      max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
+      maxTokens,
+      model: GROQ_MODEL,
     }),
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    console.error('Groq API error:', response.status, errText);
-    throw new Error(`Groq API error: ${response.status}`);
+    const errData = await response.json().catch(() => ({}));
+    console.error('AI proxy error:', response.status, errData);
+    throw new Error(`AI service error: ${response.status} — ${errData.error || 'Unknown error'}`);
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('Empty response from Groq');
+  const content = data.content;
+  if (!content) throw new Error('Empty response from AI service');
 
   return JSON.parse(content) as T;
 }
