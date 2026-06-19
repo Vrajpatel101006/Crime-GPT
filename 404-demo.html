@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 — CrimeGPT</title>
+  <script src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #0a0e17;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    dotlottie-player {
+      width: 340px;
+      height: 340px;
+    }
+    .msg {
+      margin-top: 16px;
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 0.1em;
+    }
+    .msg code {
+      background: rgba(0,255,65,0.1);
+      color: #00ff41;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+    }
+    .redirect-bar {
+      margin-top: 24px;
+      width: 160px;
+      height: 3px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .redirect-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00ff41, #00d4ff);
+      border-radius: 2px;
+      animation: fill 1.8s ease forwards;
+    }
+    @keyframes fill { to { width: 100%; } }
+    .redirect-text {
+      margin-top: 10px;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.35);
+      letter-spacing: 0.08em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <dotlottie-player
+      src="https://lottie.host/4fdb3d46-1adf-43c5-a525-8f9e6230331c/JQA8yVLYVy.lottie"
+      loop
+      autoplay
+    ></dotlottie-player>
+    <div class="msg">Error logged to <code>CrimeGPT Audit Trail</code></div>
+    <div class="redirect-bar"><div class="redirect-fill"></div></div>
+    <div class="redirect-text">Redirecting to CrimeGPT...</div>
+  </div>
+</body>
+</html>

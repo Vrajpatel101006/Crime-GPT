@@ -1,0 +1,1087 @@
+# CRIMEGPT 2.0
+
+## AI-Powered Investigation, Documentation & Legal Intelligence Platform
+
+---
+
+# PROJECT OVERVIEW
+
+CrimeGPT 2.0 is an AI-powered Investigation Operating System designed for Indian law enforcement agencies. The platform reduces paperwork, automates investigation documentation, assists officers with legal intelligence, manages evidence securely, maintains structured case diaries, and generates court-ready documents from FIR registration to chargesheet preparation.
+
+The system is designed specifically to maximize hackathon evaluation criteria:
+
+* Accuracy of Document Generation
+* Legal Section Intelligence
+* User Experience & Workflow
+* Case Diary Management
+* Multilingual Support
+* Innovation
+* Security & Compliance
+
+---
+
+# CORE PROBLEM BEING SOLVED
+
+Current police investigations suffer from:
+
+* Duplicate data entry across multiple documents
+* Manual paperwork
+* Inconsistent legal section mapping
+* Poor evidence organization
+* Lack of structured case diaries
+* Time-consuming document generation
+* Limited multilingual support
+* Delayed investigation workflows
+
+CrimeGPT solves this by creating a single source of truth for every case and automating repetitive legal and documentation tasks.
+
+---
+
+# PRODUCT VISION
+
+CrimeGPT is NOT a chatbot.
+
+CrimeGPT is an AI Investigation Operating System.
+
+Workflow:
+
+Complaint/FIR
+
+↓
+
+Case Creation
+
+↓
+
+Evidence Collection
+
+↓
+
+AI Legal Analysis
+
+↓
+
+Case Diary Automation
+
+↓
+
+Document Generation
+
+↓
+
+Investigation Readiness
+
+↓
+
+SHO Review
+
+↓
+
+Legal Review
+
+↓
+
+Chargesheet Preparation
+
+---
+
+# TARGET USERS
+
+## Investigation Officer (IO)
+
+* Create Cases
+* Upload Evidence
+* Generate Documents
+* Maintain Investigations
+
+## Station House Officer (SHO)
+
+* Review Cases
+* Approve Cases
+* Monitor Investigations
+
+## Legal Advisor
+
+* Review Legal Sections
+* Validate Documents
+* Recommend Corrections
+
+## Admin
+
+* Manage Users
+* Manage Roles
+* Audit Monitoring
+
+---
+
+# FINAL TECH STACK
+
+## Frontend
+
+* React 19
+* TypeScript
+* Vite
+* Tailwind CSS
+* shadcn/ui
+* React Query
+* Zustand
+* React Hook Form
+* Zod
+* Framer Motion
+
+## Backend
+
+* FastAPI
+* SQLAlchemy
+* Alembic
+* JWT Authentication
+* Redis
+* Celery
+
+## Database
+
+* PostgreSQL
+
+## AI Layer
+
+* OpenAI GPT
+* LangChain
+* Sentence Transformers
+
+## Vector Database
+
+* ChromaDB
+
+## OCR
+
+* Google ML Kit
+* Tesseract OCR
+
+## Storage
+
+* MinIO
+
+## Notifications
+
+* Firebase Cloud Messaging
+
+## Offline Support
+
+* IndexedDB
+
+## Deployment
+
+* Docker
+* Nginx
+* AWS/GCP/Azure Compatible
+
+---
+
+# COMPLETE WEBSITE STRUCTURE
+
+## Authentication
+
+/Login
+
+/Register
+
+/Forgot Password
+
+---
+
+## Dashboard
+
+Overview Metrics
+
+Recent Cases
+
+Pending Reviews
+
+Generated Documents
+
+Readiness Scores
+
+Notifications
+
+---
+
+## Cases
+
+/Cases
+
+/Create Case
+
+/Case Details
+
+---
+
+## Evidence
+
+/Evidence Upload
+
+/Evidence Analysis
+
+/Evidence Search
+
+---
+
+## Legal Intelligence
+
+/Legal Analysis
+
+/Section Suggestions
+
+/Judgment Retrieval
+
+---
+
+## Case Diary
+
+/Timeline
+
+/Investigation Logs
+
+---
+
+## Documents
+
+/Generate Documents
+
+/Document Preview
+
+/Download PDF
+
+/Download DOCX
+
+---
+
+## Reviews
+
+/SHO Dashboard
+
+/Legal Review Dashboard
+
+---
+
+## Administration
+
+/Users
+
+/Roles
+
+/Audit Logs
+
+/System Settings
+
+---
+
+# COMPLETE WORKFLOW
+
+---
+
+# STEP 1
+
+LOGIN
+
+User Login
+
+↓
+
+JWT Authentication
+
+↓
+
+Role Verification
+
+↓
+
+Dashboard Access
+
+---
+
+# STEP 2
+
+CREATE CASE
+
+Officer clicks:
+
+Create New Case
+
+Input Options:
+
+1. Manual Entry
+
+2. Voice Entry
+
+Supported Languages:
+
+* Gujarati
+* Hindi
+* English
+
+Example Input:
+
+"Victim received a WhatsApp investment scam link and lost ₹2 lakh."
+
+AI Performs:
+
+* Speech To Text
+* Entity Extraction
+* Crime Classification
+
+Extract:
+
+* Victim Name
+* Accused Name
+* Date
+* Time
+* Location
+* Amount
+* Crime Type
+
+Output:
+
+Structured Case Created
+
+---
+
+# STEP 3
+
+MASTER CASE RECORD
+
+Single Source Of Truth
+
+Stores:
+
+Case Details
+
+* FIR Number
+* Case Number
+* Police Station
+* Assigned Officer
+
+Victim Details
+
+* Name
+* Address
+* Mobile
+
+Accused Details
+
+* Name
+* Address
+* Mobile
+
+Incident Details
+
+* Date
+* Time
+* Location
+* Narrative
+
+Evidence
+
+Legal Sections
+
+Documents
+
+Case Diary
+
+---
+
+# STEP 4
+
+AI LEGAL INTELLIGENCE ENGINE
+
+Input:
+
+Complaint Narrative
+
+↓
+
+AI Classification
+
+↓
+
+Section Retrieval
+
+↓
+
+Judgment Retrieval
+
+↓
+
+Recommendation Engine
+
+Output:
+
+Suggested:
+
+* BNS Sections
+* BNSS References
+* BSA References
+
+Confidence Score
+
+Legal Reasoning
+
+Relevant Judgments
+
+Investigation Recommendations
+
+Example:
+
+Recommended Sections
+
+Confidence: 91%
+
+Reason:
+
+Fraud through electronic communication.
+
+Judgments:
+
+Case A
+
+Case B
+
+Important:
+
+AI only recommends.
+
+Officer approval required.
+
+---
+
+# STEP 5
+
+EVIDENCE MANAGEMENT
+
+Upload:
+
+* Images
+* PDFs
+* Audio
+* Video
+* Screenshots
+
+AI Performs:
+
+OCR
+
+Entity Extraction
+
+Metadata Extraction
+
+Extract:
+
+* Phone Numbers
+* UPI IDs
+* Bank Accounts
+* Emails
+* Vehicle Numbers
+* Names
+* Dates
+
+Automatic Evidence Tags
+
+Example:
+
+Evidence #12
+
+Type:
+WhatsApp Screenshot
+
+Tags:
+Cyber Fraud
+UPI
+Victim Chat
+
+---
+
+# STEP 6
+
+CASE DIARY AUTOMATION
+
+Every action automatically creates timeline entries.
+
+Example:
+
+05 Jul
+
+Complaint Registered
+
+06 Jul
+
+Evidence Uploaded
+
+07 Jul
+
+Witness Statement Added
+
+08 Jul
+
+Bank Freeze Request Sent
+
+09 Jul
+
+Accused Arrested
+
+10 Jul
+
+Remand Generated
+
+Timeline View
+
+Searchable
+
+Filterable
+
+Chronological
+
+---
+
+# STEP 7
+
+INVESTIGATION READINESS ENGINE
+
+AI evaluates investigation completeness.
+
+Output:
+
+Investigation Readiness
+
+86/100
+
+Missing:
+
+□ Witness Statement
+
+□ Device Seizure
+
+□ Bank Freeze Confirmation
+
+□ Legal Review
+
+Recommended Action:
+
+Collect Device Forensic Report
+
+Purpose:
+
+Prevent incomplete investigations.
+
+---
+
+# STEP 8
+
+DOCUMENT GENERATION ENGINE
+
+Generate:
+
+1. Remand Request Letter
+
+2. Chargesheet Draft
+
+3. Medical Treatment Letter
+
+4. Seizure Receipt
+
+5. Court Custody Letter
+
+6. Panchanama
+
+7. Face Identification Form
+
+Generation Method:
+
+Structured Data
+
+*
+
+Verified Templates
+
+*
+
+AI Auto Fill
+
+Validation Checks:
+
+* FIR Number
+* Victim Details
+* Accused Details
+* Legal Sections
+* Dates
+
+Missing Fields:
+
+Show Error
+
+Prevent Generation
+
+Export Formats:
+
+* PDF
+* DOCX
+
+---
+
+# STEP 9
+
+LERS REQUEST GENERATOR
+
+Generate Law Enforcement Requests
+
+Supported Platforms:
+
+* WhatsApp
+* Instagram
+* Facebook
+* Meta
+
+Auto Fill:
+
+* Case Number
+* Officer Details
+* FIR Number
+* Legal References
+
+Export:
+
+PDF
+
+DOCX
+
+---
+
+# STEP 10
+
+MULTILINGUAL SYSTEM
+
+Supported Languages:
+
+* Gujarati
+* Hindi
+* English
+
+Capabilities:
+
+* Voice Input
+* Text Input
+* Search
+* Document Generation
+
+Example:
+
+Input:
+Gujarati
+
+Output:
+English Chargesheet
+
+---
+
+# STEP 11
+
+OFFLINE-FIRST SUPPORT
+
+Technology:
+
+IndexedDB
+
+Features:
+
+* Create Cases Offline
+* Add Evidence Offline
+* Update Diary Offline
+* Generate Draft Documents Offline
+
+When Network Returns:
+
+Auto Synchronization
+
+Conflict Resolution Enabled
+
+---
+
+# STEP 12
+
+SHO REVIEW WORKFLOW
+
+Officer Submits Case
+
+↓
+
+SHO Dashboard
+
+↓
+
+Review:
+
+* Evidence
+* Sections
+* Documents
+* Readiness Score
+
+↓
+
+Approve
+
+OR
+
+Return For Changes
+
+---
+
+# STEP 13
+
+LEGAL ADVISOR REVIEW
+
+Review:
+
+* Legal Sections
+* Generated Documents
+* Judgments
+
+Actions:
+
+Approve
+
+Edit
+
+Recommend Corrections
+
+---
+
+# DASHBOARD MODULES
+
+1. Active Cases
+
+2. Pending Reviews
+
+3. Evidence Center
+
+4. Legal Suggestions
+
+5. Document Generator
+
+6. Readiness Dashboard
+
+7. Case Diary
+
+8. Notifications
+
+9. Audit Logs
+
+---
+
+# REACT FOLDER STRUCTURE
+
+src/
+
+app/
+
+pages/
+
+dashboard/
+
+cases/
+
+evidence/
+
+legal/
+
+diary/
+
+documents/
+
+review/
+
+users/
+
+components/
+
+layouts/
+
+hooks/
+
+services/
+
+store/
+
+types/
+
+lib/
+
+ai/
+
+utils/
+
+---
+
+# DATABASE TABLES
+
+users
+
+roles
+
+cases
+
+victims
+
+accused
+
+witnesses
+
+evidence
+
+evidence_tags
+
+case_diary
+
+legal_sections
+
+judgments
+
+documents
+
+readiness_scores
+
+notifications
+
+audit_logs
+
+user_sessions
+
+---
+
+# SECURITY ARCHITECTURE
+
+## Authentication
+
+JWT Authentication
+
+Access Token
+
+Refresh Token
+
+Role-Based Access
+
+---
+
+## Role Based Access Control
+
+Investigation Officer
+
+Station House Officer
+
+Legal Advisor
+
+Admin
+
+Permission Isolation Enabled
+
+---
+
+## Password Security
+
+Argon2 Password Hashing
+
+Passwords Never Stored Plain Text
+
+---
+
+## Secure Communication
+
+HTTPS
+
+TLS 1.3
+
+Protection Against:
+
+* MITM Attacks
+* Packet Sniffing
+
+---
+
+## Evidence Encryption
+
+AES-256 Encryption
+
+All Evidence Stored Encrypted
+
+---
+
+## File Integrity Verification
+
+SHA-256 Hash Generated
+
+For Every Evidence File
+
+Example:
+
+Evidence.jpg
+
+Hash:
+ABC123XYZ
+
+Tampering Detection Enabled
+
+---
+
+## Audit Logging
+
+Every Action Recorded
+
+Example:
+
+User:
+Inspector Shah
+
+Action:
+Generated Chargesheet
+
+Timestamp:
+2026-01-18 10:24
+
+Immutable Audit Trail
+
+---
+
+## Chain Of Custody
+
+Track:
+
+Uploaded By
+
+Viewed By
+
+Approved By
+
+Downloaded By
+
+Provides Court-Admissible Evidence Tracking
+
+---
+
+## Offline Security
+
+IndexedDB Encryption
+
+Local Data Protection
+
+Device Loss Protection
+
+---
+
+## API Security
+
+JWT Validation
+
+Rate Limiting
+
+Input Validation
+
+Request Sanitization
+
+Protection Against:
+
+* SQL Injection
+* API Abuse
+* Malicious Inputs
+
+---
+
+## AI Safety Layer
+
+AI Never Makes Final Legal Decisions
+
+AI Provides:
+
+* Recommendations
+* Confidence Scores
+* Reasoning
+
+Human Approval Mandatory
+
+---
+
+# INNOVATION FEATURES
+
+✓ AI Legal Intelligence
+
+✓ Investigation Readiness Score
+
+✓ Evidence Intelligence
+
+✓ Voice FIR Creation
+
+✓ Automatic Case Diary
+
+✓ Multilingual Support
+
+✓ Offline First Architecture
+
+✓ LERS Request Generator
+
+✓ Role-Based Workflow
+
+✓ SHA-256 Evidence Verification
+
+✓ Chain Of Custody Tracking
+
+✓ Court Ready Documentation
+
+✓ Future BharatPol/CCTNS Integration
+
+---
+
+# HACKATHON DEMO FLOW
+
+1. Officer logs in.
+
+2. Officer speaks complaint.
+
+3. AI extracts entities.
+
+4. Case created automatically.
+
+5. AI recommends BNS/BNSS/BSA sections.
+
+6. Relevant judgments displayed.
+
+7. Officer uploads evidence.
+
+8. OCR extracts phone numbers, UPI IDs, and metadata.
+
+9. Case diary automatically updates.
+
+10. Investigation readiness score generated.
+
+11. Generate Remand Request.
+
+12. Generate Seizure Receipt.
+
+13. Generate Chargesheet.
+
+14. Generate LERS Request.
+
+15. SHO approves case.
+
+16. Demonstrate Gujarati → English workflow.
+
+17. Demonstrate Offline Mode.
+
+18. Show Audit Logs.
+
+19. Show Evidence Integrity Verification.
+
+20. Show Chain Of Custody.
+
+---
+
+# FINAL PITCH
+
+CrimeGPT 2.0 is an AI-powered Investigation Operating System that assists law enforcement officers from FIR registration to chargesheet generation by automating documentation, organizing evidence, recommending legal sections, maintaining structured case diaries, generating court-ready documents, supporting multilingual workflows, and ensuring security through encryption, audit trails, chain-of-custody tracking, and evidence integrity verification.
+
+The platform reduces paperwork, improves legal accuracy, accelerates investigations, and enables smarter, technology-driven policing.
