@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import {
   X, CheckCircle2, Undo2, Loader2, Send, Lock, User, MapPin, Calendar,
-  FileText, MessageSquare, AlertCircle, Edit3, FolderOpen, Shield
+  FileText, MessageSquare, AlertCircle, Edit3, FolderOpen
 } from 'lucide-react';
 import {
   getCurrentUser, canAccessCase, getAllUsers, updateCase, addDiaryEntry,
   generateUniqueId, showToast, getLegalSections, getEvidenceForCase,
   getDocumentsForCase, formatDateTime
 } from '../../store';
-import type { CaseRecord, CaseStatus, CaseClassification, ClearanceLevel } from '../../types';
+import type { CaseRecord, CaseClassification, ClearanceLevel } from '../../types';
 import {
   STATUS_COLORS, CLASSIFICATION_COLORS, STATUS_STAGES,
   DOC_TYPE_LABELS, DOC_STATUS_COLORS
