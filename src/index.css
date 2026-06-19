@@ -15,6 +15,7 @@
   --brand-primary-light: #3385cc;
   --brand-primary-dark: var(--auth-blue-hover);
   --brand-accent: var(--auth-blue);
+  --brand-accent-light: #3385cc;
   
   --brand-warning: #ED6C02;
   --brand-danger: #D32F2F;
@@ -22,6 +23,8 @@
   --brand-info: #0067B8;
   
   --govt-gold: #B8973D;
+  --govt-gold-light: #D4B86A;
+  --cyber-green: #00FF41;
 
   /* Light Surface Colors */
   --surface-0: #F5F7FA;
