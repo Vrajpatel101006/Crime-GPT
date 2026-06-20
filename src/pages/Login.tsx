@@ -269,7 +269,6 @@ export default function Login({ onLogin, initialRole }: LoginProps) {
           </form>
 
           {/* Demo Credentials */}
-          {import.meta.env.DEV && (
           <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--border-subtle)' }}>
             <button
               onClick={() => setShowDemo(!showDemo)}
@@ -313,7 +312,6 @@ export default function Login({ onLogin, initialRole }: LoginProps) {
               </div>
             )}
           </div>
-          )}
 
         </div>
       </div>
