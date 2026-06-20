@@ -18,7 +18,9 @@ const GROQ_MODEL = 'llama-3.3-70b-versatile';
  * Checks whether the AI proxy is available and
  * has a server-side API key configured.
  */
+let _isAIConfiguredCache: boolean | null = null;
 export async function isAIConfigured(): Promise<boolean> {
+  if (_isAIConfiguredCache !== null) return _isAIConfiguredCache;
   try {
     const res = await fetch(PROXY_URL, {
       method: 'POST',
@@ -27,7 +29,8 @@ export async function isAIConfigured(): Promise<boolean> {
     });
     // 503 = proxy exists but no API key configured
     // 200/400/502 = proxy is operational
-    return res.status !== 503;
+    _isAIConfiguredCache = res.status !== 503;
+    return _isAIConfiguredCache;
   } catch {
     return false;
   }
@@ -62,7 +65,12 @@ async function callGroq<T = Record<string, unknown>>(
   const content = data.content;
   if (!content) throw new Error('Empty response from AI service');
 
-  return JSON.parse(content) as T;
+  try {
+    return JSON.parse(content) as T;
+  } catch (err) {
+    console.error('AI JSON parse error:', err);
+    throw new Error('AI returned malformed JSON');
+  }
 }
 
 /* ════════════════════════════════════════════

@@ -751,8 +751,15 @@ function mergeDiaryEntriesIntoCases(
       // Deduplicate by entry ID
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const seen = new Set(embedded.map((e: any) => e.id));
-      const merged = [...embedded, ...external.filter(e => !seen.has(e.id))];
-      cases[caseId].diaryEntries = merged;
+      const merged = [...embedded];
+      for (const e of external) {
+        if (!seen.has(e.id)) {
+          merged.push(e);
+          seen.add(e.id);
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cases[caseId].diaryEntries = merged.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     }
   }
 }
@@ -980,7 +987,7 @@ export function getAuditLogs(): AuditLog[] {
   return [..._auditLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
-export function addAuditLog(action: string, target: string, details: string, userId = 'io1'): void {
+export function addAuditLog(action: string, target: string, details: string, userId = 'system'): void {
   const user = USERS[userId];
   const log: AuditLog = {
     id: `al-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -1200,6 +1207,7 @@ export function startDeadlineChecker(): void {
 
 export function stopDeadlineChecker(): void {
   if (_deadlineTimerId) { clearInterval(_deadlineTimerId); _deadlineTimerId = null; }
+  _firedDeadlineKeys.clear();
 }
 
 /* ════════════════════════════════════════════
@@ -1257,6 +1265,7 @@ export function startGapChecker(): void {
 
 export function stopGapChecker(): void {
   if (_gapTimerId) { clearInterval(_gapTimerId); _gapTimerId = null; }
+  _firedGapKeys.clear();
 }
 
 /* ════════════════════════════════════════════
@@ -1618,7 +1627,7 @@ let _pendingRoleSwitch: UserRole | null = null;
 
 export function requestRoleSwitch(newRole: UserRole): void {
   const user = getCurrentUser();
-  addAuditLog('LOGOUT', _currentRole, `${user?.name || 'User'} logged out (role switch to ${newRole.toUpperCase()})`);
+  addAuditLog('ROLE_SWITCH_REQUEST', _currentRole, `${user?.name || 'User'} requested role switch to ${newRole.toUpperCase()}`);
   clearSession();
   _isAuthenticated = false;
   _pendingRoleSwitch = newRole;
@@ -1728,7 +1737,7 @@ export function restoreSession(): boolean {
 
   // Check user still exists and is not suspended
   const user = USERS[stored.userId];
-  if (!user) { clearSession(); return false; }
+  if (!user) { return false; }
 
   const uState = _userStates[stored.userId];
   if (uState?.suspendedUntil && new Date(uState.suspendedUntil) > new Date()) {
@@ -1768,7 +1777,8 @@ export function subscribeOnline(listener: (online: boolean) => void): () => void
 }
 
 // Listen for browser online/offline events
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !(window as any)._crimeGptNetworkListenersAdded) {
+  (window as any)._crimeGptNetworkListenersAdded = true;
   window.addEventListener('online', () => { _isOnline = true; _onlineListeners.forEach(l => l(true)); flushOfflineWorkflowQueue(); });
   window.addEventListener('offline', () => { _isOnline = false; _onlineListeners.forEach(l => l(false)); });
 }

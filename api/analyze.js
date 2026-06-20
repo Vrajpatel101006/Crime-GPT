@@ -19,6 +19,11 @@ const rateLimitMap = new Map();
 
 function checkRateLimit(ip) {
   const now = Date.now();
+  if (rateLimitMap.size > 1000) {
+    for (const [k, v] of rateLimitMap.entries()) {
+      if (now - v.windowStart > RATE_LIMIT_WINDOW_MS) rateLimitMap.delete(k);
+    }
+  }
   const entry = rateLimitMap.get(ip) || { count: 0, windowStart: now };
   if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
     entry.count = 0;
@@ -28,16 +33,6 @@ function checkRateLimit(ip) {
   rateLimitMap.set(ip, entry);
   return entry.count <= RATE_LIMIT_MAX;
 }
-
-// Clean up stale entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of rateLimitMap.entries()) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 5) {
-      rateLimitMap.delete(ip);
-    }
-  }
-}, 5 * 60 * 1000);
 
 export default async function handler(req, res) {
   // CORS headers for Vercel preview/production
@@ -65,7 +60,9 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'AI service not configured' });
   }
 
-  const { systemPrompt, userPrompt, temperature = 0.15, maxTokens = 2048 } = req.body || {};
+  let { systemPrompt, userPrompt, temperature = 0.15, maxTokens = 2048 } = req.body || {};
+  temperature = Math.min(2.0, Math.max(0, Number(temperature) || 0.15));
+  maxTokens = Math.min(8192, Math.max(1, Number(maxTokens) || 2048));
 
   if (!systemPrompt || !userPrompt) {
     return res.status(400).json({ error: 'Missing systemPrompt or userPrompt' });
