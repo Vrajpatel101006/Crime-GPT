@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, BookOpen, FileText,
-  CheckSquare, ScrollText, Bell, Settings, Upload,
+  CheckSquare, ScrollText, Bell, Settings, Settings2, Upload,
   Wifi, WifiOff, Scale, Menu, X, ChevronRight, LogOut, ShieldCheck, Clock
 } from 'lucide-react';
 import {
@@ -10,7 +10,7 @@ import {
   subscribeRole, getIsOnline, toggleOnline, subscribeOnline,
   getNotifications, subscribeNotifications, getToasts,
   subscribeToasts, getIsAuthenticated, subscribeAuth, logout, showToast,
-  requestRoleSwitch, getPendingRoleSwitch, clearPendingRoleSwitch,
+  getPendingRoleSwitch, clearPendingRoleSwitch,
   getPushPermission,
   initializeStore, getIsInitialized, subscribeInitialized,
   getUserRank, rankName, getAccessibleCases, subscribeCases,
@@ -35,6 +35,7 @@ const Documents = lazy(() => import('./pages/Documents'));
 const Review = lazy(() => import('./pages/Review'));
 const AuditLogs = lazy(() => import('./pages/AuditLogs'));
 const Admin = lazy(() => import('./pages/Admin'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
 
 import './index.css';
 
@@ -52,7 +53,8 @@ const NAV_ITEMS: Array<{ path?: string; icon?: React.ComponentType<{ size?: numb
   { label: 'Workflow', section: true },
   { path: '/review', icon: CheckSquare, label: 'Reviews', visibleTo: ['sho', 'legal', 'admin'] },
   { path: '/audit', icon: ScrollText, label: 'Audit Logs', adminOnly: true },
-  { label: 'System', section: true, adminOnly: true },
+  { label: 'System', section: true },
+  { path: '/settings', icon: Settings2, label: 'Settings' },
   { path: '/admin', icon: Settings, label: 'Administration', adminOnly: true },
 ];
 
@@ -66,6 +68,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/documents': 'Document Generator',
   '/review': 'Case Reviews',
   '/audit': 'Audit Logs',
+  '/settings': 'Settings',
   '/admin': 'Administration',
 };
 
@@ -221,7 +224,6 @@ function Sidebar({ collapsed, mobileOpen, isMobile }: { collapsed: boolean; mobi
 function TopBar({ onMenuToggle, sidebarCollapsed, isMobile, mobileMenuOpen }: { onMenuToggle: () => void; sidebarCollapsed: boolean; isMobile: boolean; mobileMenuOpen: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [role, setRole] = useState<UserRole>(getCurrentRole());
   const [online, setOnline] = useState(getIsOnline());
   const [showNotifs, setShowNotifs] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -235,18 +237,9 @@ function TopBar({ onMenuToggle, sidebarCollapsed, isMobile, mobileMenuOpen }: { 
     updateCounts();
     const u1 = subscribeNotifications(updateCounts);
     const u2 = subscribeWorkflowEvents(updateCounts);
-    const unsub1 = subscribeRole(setRole);
     const unsub2 = subscribeOnline(setOnline);
-    return () => { unsub1(); unsub2(); u1(); u2(); };
+    return () => { unsub2(); u1(); u2(); };
   }, []);
-
-  const handleRoleChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newRole = e.target.value as UserRole;
-    if (newRole !== role) {
-      showToast(`Switching to ${newRole.toUpperCase()} role — please log in with ${newRole.toUpperCase()} credentials.`, 'info');
-      requestRoleSwitch(newRole);
-    }
-  }, [role]);
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'CrimeGPT';
 
@@ -267,17 +260,6 @@ function TopBar({ onMenuToggle, sidebarCollapsed, isMobile, mobileMenuOpen }: { 
           </div>
         </div>
         <div className="topbar-right">
-          {/* Role Switcher */}
-          <div className="role-switcher">
-            <label>Role</label>
-            <select value={role} onChange={handleRoleChange}>
-              <option value="io">Investigation Officer</option>
-              <option value="sho">Station House Officer</option>
-              <option value="legal">Legal Advisor</option>
-              <option value="admin">Administrator</option>
-            </select>
-          </div>
-
           {/* Network Status */}
           <button
             className={`topbar-status ${online ? 'online' : 'offline'}`}
@@ -303,12 +285,10 @@ function TopBar({ onMenuToggle, sidebarCollapsed, isMobile, mobileMenuOpen }: { 
             )}
           </button>
 
-          {/* Settings — admin only */}
-          {role === 'admin' && (
-            <button className="topbar-icon-btn" title="Administration" onClick={() => navigate('/admin')}>
-              <Settings size={18} />
-            </button>
-          )}
+          {/* Settings — all roles */}
+          <button className="topbar-icon-btn" title="Settings" onClick={() => navigate('/settings')}>
+            <Settings2 size={18} />
+          </button>
         </div>
       </header>
       <AlertCenter key={String(showNotifs)} open={showNotifs} onClose={() => setShowNotifs(false)} />
@@ -548,6 +528,7 @@ function AppShell() {
             <Route path="/documents" element={<Documents />} />
             <Route path="/review" element={<RoleGuard allowedRoles={ROUTE_ROLES['/review']}><Review /></RoleGuard>} />
             <Route path="/audit" element={<RoleGuard allowedRoles={ROUTE_ROLES['/audit']}><AuditLogs /></RoleGuard>} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/admin" element={<RoleGuard allowedRoles={ROUTE_ROLES['/admin']}><Admin /></RoleGuard>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

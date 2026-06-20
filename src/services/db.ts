@@ -352,3 +352,15 @@ export async function getSettings(): Promise<any | null> {
 export async function updateSettings(updates: Record<string, any>): Promise<void> {
   await patch('/settings', updates);
 }
+
+/* ════════════════════════════════════════════
+   USER PREFERENCES
+   ════════════════════════════════════════════ */
+
+export async function getUserPreferences(userId: string): Promise<any | null> {
+  return readOnce(`/userPreferences/${userId}`);
+}
+
+export async function updateUserPreferences(userId: string, prefs: Record<string, any>): Promise<void> {
+  await patch(`/userPreferences/${userId}`, prefs);
+}

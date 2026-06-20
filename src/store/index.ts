@@ -674,6 +674,44 @@ export function subscribeSettings(listener: () => void): () => void {
 }
 
 /* ════════════════════════════════════════════
+   USER PREFERENCES (per-user)
+   ════════════════════════════════════════════ */
+export interface UserPreferences {
+  uiLanguage: 'en' | 'hi' | 'gu';
+  documentLanguage: 'en' | 'hi' | 'gu';
+  paperSize: 'A4' | 'Legal' | 'Letter';
+  documentFormat: 'standard' | 'detailed';
+  desktopNotifications: boolean;
+  autoSaveDrafts: boolean;
+}
+
+const DEFAULT_USER_PREFS: UserPreferences = {
+  uiLanguage: 'en', documentLanguage: 'en',
+  paperSize: 'A4', documentFormat: 'standard',
+  desktopNotifications: true, autoSaveDrafts: true,
+};
+
+let _userPreferences: Record<string, UserPreferences> = {};
+let _userPrefsListeners: Array<() => void> = [];
+
+export function getUserPreferences(userId?: string): UserPreferences {
+  const id = userId || getCurrentUserId();
+  return { ...DEFAULT_USER_PREFS, ..._userPreferences[id] };
+}
+
+export function updateUserPreferences(updates: Partial<UserPreferences>, userId?: string): void {
+  const id = userId || getCurrentUserId();
+  _userPreferences[id] = { ...getUserPreferences(id), ...updates };
+  db.updateUserPreferences(id, updates);
+  _userPrefsListeners.forEach(l => l());
+}
+
+export function subscribeUserPreferences(listener: () => void): () => void {
+  _userPrefsListeners.push(listener);
+  return () => { _userPrefsListeners = _userPrefsListeners.filter(l => l !== listener); };
+}
+
+/* ════════════════════════════════════════════
    LEGAL SECTIONS
    ════════════════════════════════════════════ */
 let LEGAL_SECTIONS: LegalSection[] = [];
