@@ -1,4 +1,4 @@
-/* ============================================
+﻿/* ============================================
    CRIMEGPT 2.0 — FIREBASE-BACKED STORE
    ============================================
    All data persists to Firebase Realtime DB.
@@ -6,7 +6,7 @@
    Real-time listeners sync across devices.
    ============================================ */
 
-import { type User, type CaseRecord, type Evidence, type LegalSection, type Judgment, type AuditLog, type Notification, type Toast, type LegalSuggestion, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest, type WorkflowEvent } from '../types';
+import { type User, type CaseRecord, type Evidence, type AuditLog, type Notification, type Toast, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest, type WorkflowEvent } from '../types';
 import { firebaseLogin, firebaseLogout, firebaseCreateUser, ensureDemoAuthUsers, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
 import * as db from '../services/db';
 import {
@@ -15,75 +15,34 @@ import {
   SEED_DIARY_ENTRIES, SEED_AUDIT_LOGS, SEED_NOTIFICATIONS,
   SEED_WORKFLOW_EVENTS,
 } from '../data/seed';
-import { isAIConfigured, analyzeComplaint, suggestLegalSections, findJudgments, type AIAnalysisResult } from '../services/ai';
+import { isAIConfigured, analyzeComplaint, type AIAnalysisResult } from '../services/ai';
 import * as wf from '../services/workflow';
 import * as push from '../services/push';
+/* ── MODEL LAYER (delegated to src/models/) ── */
+import {
+  type HydrationError,
+  getHydrationErrors as _getHydrationErrors,
+  validateBatch, SCHEMAS,
+} from '../models/validation';
+import {
+  type SystemSettings, type UserPreferences,
+  hydrateSettings as _hydrateSettings,
+  getSettings as _getSettings, updateSettingsRaw,
+  subscribeSettings as _subscribeSettings,
+  getUserPrefsForUser, updateUserPrefsForUser,
+  subscribeUserPreferences as _subscribeUserPreferences,
+} from '../models/settingsModel';
+import {
+  hydrateLegalSections as _hydrateLegalSections,
+  getLegalSections as _getLegalSections,
+  hydrateJudgments as _hydrateJudgments,
+  getJudgments as _getJudgments,
+  simulateLegalAnalysis as _simulateLegalAnalysis,
+} from '../models/legalModel';
+export type { SystemSettings, UserPreferences } from '../models/settingsModel';
 
 export type { Toast } from '../types';
 export type { WorkflowEvent, NotificationPriority, NotificationAction, NotificationCategory, WorkflowEventType } from '../types';
-
-/* ─── RUNTIME DATA VALIDATION ─── */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HydrationError = { entity: string; id: string; reason: string; timestamp: string };
-type FieldValidator = { required: string[]; defaults: Record<string, any> };
-const _hydrationErrors: HydrationError[] = [];
-
-function logHydrationSkip(entity: string, id: string, reason: string): void {
-  const entry: HydrationError = { entity, id: id || '<unknown>', reason, timestamp: new Date().toISOString() };
-  _hydrationErrors.push(entry);
-  console.warn(`[CrimeGPT] Skipped invalid ${entity} record (${entry.id}): ${reason}`);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function validateRecord(entity: string, raw: any, schema: FieldValidator): any | null {
-  if (!raw || typeof raw !== 'object') {
-    logHydrationSkip(entity, '<non-object>', 'Record is null or not an object');
-    return null;
-  }
-  for (const field of schema.required) {
-    if (raw[field] === undefined || raw[field] === null) {
-      logHydrationSkip(entity, String(raw.id ?? ''), `Missing required field: ${field}`);
-      return null;
-    }
-  }
-  const out = { ...raw };
-  for (const [key, fallback] of Object.entries(schema.defaults)) {
-    if (out[key] === undefined || out[key] === null) {
-      out[key] = Array.isArray(fallback) ? [...fallback] : (typeof fallback === 'object' ? { ...fallback } : fallback);
-    }
-  }
-  return out;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function validateBatch(entity: string, data: Record<string, any>, schema: FieldValidator): any[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const valid: any[] = [];
-  for (const raw of Object.values(data)) {
-    const v = validateRecord(entity, raw, schema);
-    if (v !== null) valid.push(v);
-  }
-  return valid;
-}
-
-const SCHEMAS: Record<string, FieldValidator> = {
-  user:            { required: ['id'], defaults: { role: 'io', badge: '', station: '', email: '', name: '', rank: undefined, clearanceLevel: undefined } },
-  legalSection:    { required: ['id', 'act', 'sectionNumber'], defaults: { title: '', description: '', keywords: [], crimeTypes: [], evidence_required: [], relatedSections: [], punishment: '', legacyReference: '' } },
-  judgment:        { required: ['id', 'title'], defaults: { court: '', year: 0, summary: '', relevantSections: [], citation: '' } },
-  case:            { required: ['id', 'firNumber', 'status'], defaults: { caseNumber: '', policeStation: '', assignedOfficer: '', assignedStation: '', classification: 'confidential', clearanceRequired: 1, crimeType: '', createdAt: '', updatedAt: '', victim: {}, accused: {}, incident: {}, evidenceIds: [], legalSectionIds: [], documentIds: [], diaryEntries: [], readinessScore: 0, reviewStatus: 'pending_io', reviewComments: [] } },
-  evidence:        { required: ['id', 'caseId', 'fileName'], defaults: { fileType: '', fileSize: 0, uploadedAt: '', uploadedBy: '', sha256Hash: '', tags: [], mimeType: '', filePath: '', fileData: undefined, extractedEntities: [], chainOfCustody: [] } },
-  document:        { required: ['id', 'caseId', 'type', 'title'], defaults: { content: '', generatedAt: '', generatedBy: '', status: 'draft', validationErrors: [], version: 1 } },
-  auditLog:        { required: ['id', 'action', 'timestamp'], defaults: { userId: 'system', userName: 'System', userRole: 'io', target: '', details: '' } },
-};
-
-const SETTINGS_ALLOWLIST: ReadonlySet<string> = new Set([
-  'autoSaveInterval', 'sessionTimeout', 'maxFileSize',
-  'encryptionEnabled', 'offlineMode', 'autoBackup',
-  'emailNotifications', 'smsAlerts', 'darkMode',
-  'language', 'policeStation', 'district', 'state', 'firPrefix',
-]);
-
-export function getHydrationErrors(): HydrationError[] { return [..._hydrationErrors]; }
 
 /* ─── INITIALIZATION STATE ─── */
 let _isInitialized = false;
@@ -618,148 +577,49 @@ export function subscribeAccessRequests(listener: () => void): () => void {
 }
 
 /* ════════════════════════════════════════════
-   SYSTEM SETTINGS
+   SYSTEM SETTINGS (wrappers over settingsModel)
    ════════════════════════════════════════════ */
-export interface SystemSettings {
-  autoSaveInterval: number;
-  sessionTimeout: number;
-  maxFileSize: number;
-  encryptionEnabled: boolean;
-  offlineMode: boolean;
-  autoBackup: boolean;
-  emailNotifications: boolean;
-  smsAlerts: boolean;
-  darkMode: boolean;
-  language: string;
-  policeStation: string;
-  district: string;
-  state: string;
-  firPrefix: string;
-}
-
-let _settings: SystemSettings = {
-  autoSaveInterval: 5, sessionTimeout: 30, maxFileSize: 100,
-  encryptionEnabled: true, offlineMode: true, autoBackup: true,
-  emailNotifications: true, smsAlerts: false, darkMode: false,
-  language: 'English', policeStation: 'Cybercrime PS, Ahmedabad',
-  district: 'Ahmedabad', state: 'Gujarat', firPrefix: 'FIR/CC/AHD',
-};
-let _settingsListeners: Array<() => void> = [];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hydrateSettings(data: any): void {
-  if (!data || typeof data !== 'object') return;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const safe: Record<string, any> = {};
-  for (const [key, val] of Object.entries(data)) {
-    if (SETTINGS_ALLOWLIST.has(key)) { safe[key] = val; }
-    else { logHydrationSkip('settings', key, `Rejected unknown setting key: ${key}`); }
-  }
-  _settings = { ..._settings, ...safe };
-  _settingsListeners.forEach(l => l());
-}
-
-export function getSettings(): SystemSettings { return { ..._settings }; }
+export function getSettings(): SystemSettings { return _getSettings(); }
 
 export function updateSettings(updates: Partial<SystemSettings>): void {
-  _settings = { ..._settings, ...updates };
-  db.updateSettings(updates);
-  _settingsListeners.forEach(l => l());
-  addAuditLog('UPDATE_SETTINGS', 'system', `System settings updated`, 'admin1');
+  updateSettingsRaw(updates);
+  addAuditLog('UPDATE_SETTINGS', 'system', 'System settings updated', 'admin1');
 }
 
 export function subscribeSettings(listener: () => void): () => void {
-  _settingsListeners.push(listener);
-  return () => { _settingsListeners = _settingsListeners.filter(l => l !== listener); };
+  return _subscribeSettings(listener);
 }
+
+export function hydrateSettings(data: unknown): void { _hydrateSettings(data); }
 
 /* ════════════════════════════════════════════
-   USER PREFERENCES (per-user)
+   USER PREFERENCES (wrappers over settingsModel)
    ════════════════════════════════════════════ */
-export interface UserPreferences {
-  uiLanguage: 'en' | 'hi' | 'gu';
-  documentLanguage: 'en' | 'hi' | 'gu';
-  paperSize: 'A4' | 'Legal' | 'Letter';
-  documentFormat: 'standard' | 'detailed';
-  desktopNotifications: boolean;
-  autoSaveDrafts: boolean;
-}
-
-const DEFAULT_USER_PREFS: UserPreferences = {
-  uiLanguage: 'en', documentLanguage: 'en',
-  paperSize: 'A4', documentFormat: 'standard',
-  desktopNotifications: true, autoSaveDrafts: true,
-};
-
-let _userPreferences: Record<string, UserPreferences> = {};
-let _userPrefsListeners: Array<() => void> = [];
-
 export function getUserPreferences(userId?: string): UserPreferences {
   const id = userId || getCurrentUserId();
-  return { ...DEFAULT_USER_PREFS, ..._userPreferences[id] };
+  return getUserPrefsForUser(id);
 }
 
 export function updateUserPreferences(updates: Partial<UserPreferences>, userId?: string): void {
   const id = userId || getCurrentUserId();
-  _userPreferences[id] = { ...getUserPreferences(id), ...updates };
-  db.updateUserPreferences(id, updates);
-  _userPrefsListeners.forEach(l => l());
+  updateUserPrefsForUser(id, updates);
 }
 
 export function subscribeUserPreferences(listener: () => void): () => void {
-  _userPrefsListeners.push(listener);
-  return () => { _userPrefsListeners = _userPrefsListeners.filter(l => l !== listener); };
+  return _subscribeUserPreferences(listener);
 }
+
+export function getHydrationErrors(): HydrationError[] { return _getHydrationErrors(); }
 
 /* ════════════════════════════════════════════
-   LEGAL SECTIONS
+   LEGAL SECTIONS & JUDGMENTS (wrappers over legalModel)
    ════════════════════════════════════════════ */
-let LEGAL_SECTIONS: LegalSection[] = [];
+export function getLegalSections() { return _getLegalSections(); }
+export function getJudgments() { return _getJudgments(); }
+export function hydrateLegalSections(data: unknown) { _hydrateLegalSections(data as Record<string, unknown>); }
+export function hydrateJudgments(data: unknown) { _hydrateJudgments(data as Record<string, unknown>); }
+export async function simulateLegalAnalysis(narrative: string, crimeCategory?: string) { return _simulateLegalAnalysis(narrative, crimeCategory); }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hydrateLegalSections(data: Record<string, any>): void {
-  const valid = validateBatch('legalSection', data, SCHEMAS.legalSection);
-  LEGAL_SECTIONS = valid.map((s: any) => ({
-    id: s.id,
-    act: s.act,
-    sectionNumber: s.sectionNumber,
-    title: s.title,
-    description: s.description,
-    keywords: s.keywords,
-    crimeTypes: s.crimeTypes,
-    evidence_required: s.evidence_required,
-    relatedSections: s.relatedSections,
-    punishment: s.punishment,
-    legacyReference: s.legacyReference,
-  }));
-}
-
-export function getLegalSections(): LegalSection[] {
-  return [...LEGAL_SECTIONS];
-}
-
-/* ════════════════════════════════════════════
-   JUDGMENTS
-   ════════════════════════════════════════════ */
-let JUDGMENTS: Judgment[] = [];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hydrateJudgments(data: Record<string, any>): void {
-  const valid = validateBatch('judgment', data, SCHEMAS.judgment);
-  JUDGMENTS = valid.map((j: any) => ({
-    id: j.id,
-    title: j.title,
-    court: j.court,
-    year: j.year,
-    summary: j.summary,
-    relevantSections: j.relevantSections,
-    citation: j.citation,
-  }));
-}
-
-export function getJudgments(): Judgment[] {
-  return [...JUDGMENTS];
-}
 
 /* ════════════════════════════════════════════
    CASES
@@ -1369,95 +1229,6 @@ export async function simulateEntityExtraction(text: string, crimeCategory?: str
   return { ...result, aiPowered: false };
 }
 
-/* ─── Main legal analysis (tries AI, falls back to simulator) ─── */
-export async function simulateLegalAnalysis(narrative: string, crimeCategory?: string): Promise<{ suggestions: LegalSuggestion[]; judgments: Judgment[] }> {
-  if (await isAIConfigured()) {
-    try {
-      const sections = getLegalSections();
-      const aiSuggestions = await suggestLegalSections(narrative, sections.map(s => ({
-        id: s.id, act: s.act, sectionNumber: s.sectionNumber,
-        title: s.title, description: s.description,
-        keywords: s.keywords, crimeTypes: s.crimeTypes,
-      })), crimeCategory);
-
-      // Map AI results back to LegalSuggestion type
-      const suggestions: LegalSuggestion[] = aiSuggestions.map(ai => {
-        const section = sections.find(s => s.id === ai.sectionId);
-        return {
-          section: section || sections[0] || {} as LegalSection,
-          confidence: ai.confidence,
-          reasoning: ai.reasoning,
-          matchedKeywords: ai.matchedKeywords,
-        };
-      }).filter(s => s.section && s.section.id);
-
-      // Get AI-powered judgments
-      const crimeType = suggestions.length > 0 ? suggestions[0].section.title : 'General Offence';
-      const sectionIds = suggestions.map(s => s.section.id);
-
-      let judgments: Judgment[] = [];
-      try {
-        const aiJudgments = await findJudgments(crimeType, sectionIds);
-        // Convert AI judgments to our Judgment type
-        judgments = aiJudgments.map(j => ({
-          id: j.id,
-          title: j.title,
-          court: j.court,
-          year: j.year,
-          summary: `${j.summary}\n\nRelevance: ${j.relevance}`,
-          relevantSections: sectionIds,
-          citation: j.citation,
-        }));
-      } catch { /* judgments are optional */ }
-
-      // If AI found no suggestions, try fallback
-      if (suggestions.length === 0) {
-        return _simulateLegalAnalysisFallback(narrative);
-      }
-
-      return { suggestions, judgments };
-    } catch (err) {
-      console.warn('AI legal analysis failed, using fallback:', err);
-    }
-  }
-  return _simulateLegalAnalysisFallback(narrative);
-}
-
-/* ─── FALLBACK: Original keyword-based legal analysis ─── */
-function _simulateLegalAnalysisFallback(narrative: string): { suggestions: LegalSuggestion[]; judgments: Judgment[] } {
-  const lowerNarrative = narrative.toLowerCase();
-  const matched: LegalSuggestion[] = [];
-
-  for (const section of LEGAL_SECTIONS) {
-    const matchedKeywords = section.keywords.filter(kw => lowerNarrative.includes(kw));
-    if (matchedKeywords.length > 0 || section.crimeTypes.some(ct => lowerNarrative.includes(ct.toLowerCase()))) {
-      const confidence = Math.min(0.98, 0.6 + matchedKeywords.length * 0.1 + Math.random() * 0.1);
-      matched.push({
-        section,
-        confidence,
-        reasoning: `The complaint narrative contains keywords related to ${section.title}: ${matchedKeywords.join(', ') || section.crimeTypes[0] || 'related crime patterns'}. This section covers ${section.description.substring(0, 120)}...`,
-        matchedKeywords,
-      });
-    }
-  }
-
-  if (matched.length === 0) {
-    matched.push({
-      section: LEGAL_SECTIONS[0] || {} as LegalSection,
-      confidence: 0.55,
-      reasoning: 'General fraud indicators detected in the complaint narrative.',
-      matchedKeywords: ['fraud'],
-    });
-  }
-
-  matched.sort((a, b) => b.confidence - a.confidence);
-
-  const relevantJudgments = JUDGMENTS.filter(j =>
-    matched.some(m => j.relevantSections.includes(m.section.id))
-  );
-
-  return { suggestions: matched.slice(0, 5), judgments: relevantJudgments };
-}
 
 /* ─── FALLBACK: Original pattern-based entity extraction ─── */
 function _simulateEntityExtractionFallback(text: string, crimeCategory?: string): { crimeType: string; entities: Record<string, string> } {
@@ -1710,7 +1481,7 @@ interface StoredSession {
 }
 
 export function getSessionTimeoutMs(): number {
-  return (_settings.sessionTimeout || 30) * 60 * 1000;
+  return (_getSettings().sessionTimeout || 30) * 60 * 1000;
 }
 
 export function persistSession(): void {
