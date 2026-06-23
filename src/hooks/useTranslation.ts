@@ -15,7 +15,7 @@ import {
   SUPPORTED_LANGUAGES,
   type SupportedLanguage,
 } from '../i18n';
-import { getUserPreferences } from '../store';
+import { getUserPreferences, getCurrentUserId, updateUserPreferences } from '../store';
 
 const LANGUAGE_STORAGE_KEY = 'crimegpt_language';
 
@@ -124,6 +124,7 @@ export function useTranslation() {
   /**
    * Change the current language
    * Works offline — no API calls required
+   * Saves to both localStorage and Firebase user preferences
    */
   const changeLanguage = useCallback(async (newLanguage: SupportedLanguage) => {
     if (!isSupportedLanguage(newLanguage)) {
@@ -135,6 +136,17 @@ export function useTranslation() {
 
     currentLanguage = newLanguage;
     storeLanguage(newLanguage);
+    
+    // Save to Firebase user preferences (per-user, persistent across devices)
+    try {
+      const userId = getCurrentUserId();
+      if (userId) {
+        updateUserPreferences({ uiLanguage: newLanguage }, userId);
+      }
+    } catch (err) {
+      console.warn('[useTranslation] Failed to save language to Firebase:', err);
+    }
+    
     notifyListeners();
     setLanguage(newLanguage);
   }, []);
@@ -154,6 +166,25 @@ export function useTranslation() {
     languages: SUPPORTED_LANGUAGES,
     currentLanguageInfo: SUPPORTED_LANGUAGES.find(l => l.code === language),
   };
+}
+
+/**
+ * Re-initialize language from user preferences (call after login)
+ */
+export function reinitializeLanguage(): void {
+  try {
+    const prefs = getUserPreferences();
+    if (prefs.uiLanguage && isSupportedLanguage(prefs.uiLanguage)) {
+      if (prefs.uiLanguage !== currentLanguage) {
+        currentLanguage = prefs.uiLanguage;
+        storeLanguage(currentLanguage);
+        notifyListeners();
+        console.log(`[useTranslation] Language re-initialized to: ${currentLanguage}`);
+      }
+    }
+  } catch (err) {
+    console.warn('[useTranslation] Failed to reinitialize language:', err);
+  }
 }
 
 /**

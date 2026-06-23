@@ -31,7 +31,7 @@ export default function Settings() {
   const userRank = getUserRank(user);
   const [role, setRole] = useState<UserRole>(getCurrentRole());
 
-  const { language, changeLanguage, languages } = useTranslation();
+  const { t, language, changeLanguage, languages } = useTranslation();
   const [prefs, setPrefs] = useState<UserPreferences>(getUserPreferences());
   const [pushEnabled, setPushEnabled] = useState(isPushEnabled());
   const [pushSupported] = useState(() => typeof Notification !== 'undefined');
@@ -46,7 +46,7 @@ export default function Settings() {
     if (newRole !== role) {
       setRole(newRole);
       showToast(
-        `Switching to ${newRole.toUpperCase()} role — please log in with ${newRole.toUpperCase()} credentials.`,
+        `${t('settings.switchingTo')} ${newRole.toUpperCase()} ${t('settings.role')} — ${t('settings.loginWithCredentials')}`,
         'info',
       );
       requestRoleSwitch(newRole);
@@ -57,8 +57,8 @@ export default function Settings() {
   const handleUiLanguage = useCallback(async (code: string) => {
     const lang = code as 'en' | 'hi' | 'gu';
     await changeLanguage(lang);
-    updateUserPreferences({ uiLanguage: lang });
-    showToast('Language changed successfully.', 'success');
+    // changeLanguage now saves to Firebase automatically
+    showToast(t('settings.languageChangedSuccess'), 'success');
   }, [changeLanguage]);
 
   /* ── Push notification toggle ── */
@@ -68,21 +68,21 @@ export default function Settings() {
       setPushEnabled(granted);
       if (granted) {
         updateUserPreferences({ desktopNotifications: true });
-        showToast('Desktop notifications enabled.', 'success');
+        showToast(t('settings.desktopNotificationsEnabled'), 'success');
       } else {
-        showToast('Notification permission denied. Please allow in browser settings.', 'warning');
+        showToast(t('settings.notificationPermissionDenied'), 'warning');
       }
     } else {
       setPushEnabled(false);
       updateUserPreferences({ desktopNotifications: false });
-      showToast('Desktop notifications disabled.', 'info');
+      showToast(t('settings.desktopNotificationsDisabled'), 'info');
     }
   }, []);
 
   /* ── Save other preferences ── */
   const handleSave = useCallback(() => {
     updateUserPreferences(prefs);
-    showToast('Preferences saved — changes apply immediately.', 'success');
+    showToast(t('settings.preferencesSaved'), 'success');
   }, [prefs]);
 
   const updatePref = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
@@ -96,8 +96,8 @@ export default function Settings() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1>Settings</h1>
-          <p className="text-muted">Manage your profile, language, and application preferences</p>
+          <h1>{t('settings.title')}</h1>
+          <p className="text-muted">{t('settings.manageProfile')}</p>
         </div>
       </div>
 
@@ -107,7 +107,7 @@ export default function Settings() {
         <div className="card settings-card">
           <div className="settings-card-header">
             <User size={18} style={{ color: ROLE_COLORS[role] }} />
-            <h4>Profile</h4>
+            <h4>{t('settings.profile')}</h4>
           </div>
           <div className="settings-profile">
             <div className="settings-avatar" style={{ background: ROLE_COLORS[role] }}>
@@ -130,13 +130,13 @@ export default function Settings() {
         <div className="card settings-card">
           <div className="settings-card-header">
             <ShieldCheck size={18} style={{ color: '#6366f1' }} />
-            <h4>Active Role</h4>
+            <h4>{t('settings.activeRole')}</h4>
           </div>
           <p className="text-muted" style={{ fontSize: '0.82rem', margin: '0 0 12px' }}>
-            Switch roles to view the application as a different officer type. You will be asked to log in again with the corresponding credentials.
+            {t('settings.switchRolesDescription')}
           </p>
           <div className="form-group">
-            <label>Current Role</label>
+            <label>{t('settings.currentRole')}</label>
             <select className="form-select" value={role} onChange={handleRoleChange}>
               {ROLE_OPTIONS.map(r => (
                 <option key={r.value} value={r.value}>{r.label}</option>
@@ -165,10 +165,10 @@ export default function Settings() {
         <div className="card settings-card">
           <div className="settings-card-header">
             <Globe size={18} style={{ color: '#10b981' }} />
-            <h4>Language &amp; Localization</h4>
+            <h4>{t('settings.languageLocalization')}</h4>
           </div>
           <div className="form-group">
-            <label>Interface Language</label>
+            <label>{t('settings.interfaceLanguage')}</label>
             <select
               className="form-select"
               value={language}
@@ -181,11 +181,11 @@ export default function Settings() {
               ))}
             </select>
             <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-              Changes apply immediately across all pages.
+              {t('settings.languageChangesApplyInstantly')}
             </small>
           </div>
           <div className="form-group">
-            <label>Default Document Language</label>
+            <label>{t('settings.defaultDocumentLanguage')}</label>
             <select
               className="form-select"
               value={prefs.documentLanguage}
@@ -198,7 +198,7 @@ export default function Settings() {
               ))}
             </select>
             <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-              Used when generating FIR, chargesheet, and other court documents.
+              {t('settings.documentLanguageDescription')}
             </small>
           </div>
         </div>
@@ -207,11 +207,11 @@ export default function Settings() {
         <div className="card settings-card">
           <div className="settings-card-header">
             <FileText size={18} style={{ color: '#f59e0b' }} />
-            <h4>Document Defaults</h4>
+            <h4>{t('settings.documentDefaults')}</h4>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group">
-              <label>Paper Size</label>
+              <label>{t('settings.paperSize')}</label>
               <select
                 className="form-select"
                 value={prefs.paperSize}
@@ -223,7 +223,7 @@ export default function Settings() {
               </select>
             </div>
             <div className="form-group">
-              <label>Document Format</label>
+              <label>{t('settings.documentFormat')}</label>
               <select
                 className="form-select"
                 value={prefs.documentFormat}
@@ -235,7 +235,7 @@ export default function Settings() {
             </div>
           </div>
           <div className="form-group">
-            <label>Auto-Save Drafts</label>
+            <label>{t('settings.autoSaveDrafts')}</label>
             <label className="toggle-switch">
               <input
                 type="checkbox"
@@ -244,11 +244,11 @@ export default function Settings() {
               />
               <span className="toggle-slider" />
               <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                {prefs.autoSaveDrafts ? 'Enabled' : 'Disabled'}
+                {prefs.autoSaveDrafts ? t('settings.enabled') : t('settings.disabled')}
               </span>
             </label>
             <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginTop: 4 }}>
-              Automatically save document drafts while editing.
+              {t('settings.autoSaveDraftsDescription')}
             </small>
           </div>
         </div>
@@ -257,10 +257,10 @@ export default function Settings() {
         <div className="card settings-card">
           <div className="settings-card-header">
             <Bell size={18} style={{ color: '#ef4444' }} />
-            <h4>Notifications</h4>
+            <h4>{t('settings.notifications')}</h4>
           </div>
           <div className="form-group">
-            <label>Desktop Push Notifications</label>
+            <label>{t('settings.desktopPushNotifications')}</label>
             <label className="toggle-switch">
               <input
                 type="checkbox"
@@ -271,30 +271,30 @@ export default function Settings() {
               <span className="toggle-slider" />
               <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                 {pushEnabled
-                  ? 'Enabled'
+                  ? t('settings.enabled')
                   : pushPerm === 'denied'
-                    ? 'Blocked by browser'
-                    : 'Disabled'}
+                    ? t('settings.blockedByBrowser')
+                    : t('settings.disabled')}
               </span>
             </label>
             {pushPerm === 'denied' && (
               <small style={{ color: 'var(--brand-danger)', fontSize: '0.75rem', display: 'block', marginTop: 4 }}>
-                Notifications are blocked. Reset permission in your browser's site settings to re-enable.
+                {t('settings.notificationsBlockedMessage')}
               </small>
             )}
             <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginTop: 4 }}>
-              Receive OS-level alerts for case updates, escalations, and approvals. In-app alerts always appear in the Alert Center.
+              {t('settings.notificationsDescription')}
             </small>
           </div>
           <div className="settings-notif-preview">
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 8 }}>
-              Notification priority levels:
+              {t('settings.notificationPriorityLevels')}
             </div>
             <div className="settings-notif-levels">
-              <span className="badge badge-danger">🔴 Critical — requires immediate action</span>
-              <span className="badge badge-warning">🟡 High — action needed soon</span>
+              <span className="badge badge-danger">{t('settings.criticalPriority')}</span>
+              <span className="badge badge-warning">{t('settings.highPriority')}</span>
               <span className="badge" style={{ background: '#6366f118', color: '#6366f1', border: '1px solid #6366f140' }}>
-                🔵 Normal — informational
+                {t('settings.normalPriority')}
               </span>
             </div>
           </div>
@@ -305,10 +305,10 @@ export default function Settings() {
       {/* ── Save bar ── */}
       <div className="settings-save-bar">
         <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          Language changes apply instantly. Other preferences require saving.
+          {t('settings.saveBarDescription')}
         </span>
         <button className="btn btn-primary" onClick={handleSave}>
-          <Save size={16} /> Save Preferences
+          <Save size={16} /> {t('settings.savePreferences')}
         </button>
       </div>
     </div>

@@ -2,12 +2,12 @@
 import { useState, useCallback, useRef } from 'react';
 import {
   Plus, X, CheckCircle2, Mic, MicOff, Loader2, FileText, ChevronRight,
-  AlertCircle, Scale, Sparkles, Upload, HardDrive
+  AlertCircle, Scale, Sparkles, Upload, HardDrive, Lock
 } from 'lucide-react';
 import {
   getCurrentUser, simulateEntityExtraction, simulateLegalAnalysis,
   generateUniqueId, showToast, addCase, updateCase, addEvidence, addDiaryEntry,
-  getLegalSections
+  getLegalSections, encryptCaseForStorage
 } from '../../store';
 import type { CaseRecord, LegalSuggestion, Judgment, Evidence, ExtractedEntity } from '../../types';
 import { CRIME_TEMPLATES } from './caseConstants';
@@ -216,7 +216,9 @@ export default function CreateCaseModal({ onClose }: { onClose: () => void }) {
       reviewStatus: 'pending_sho',
     };
 
-    addCase(newCase);
+    // Encrypt PII fields before storage (AES-256-GCM)
+    const encryptedCase = await encryptCaseForStorage(newCase);
+    addCase(encryptedCase);
 
     // Upload staged evidence files
     if (stagedFiles.length > 0) {
@@ -274,7 +276,7 @@ export default function CreateCaseModal({ onClose }: { onClose: () => void }) {
       category: 'complaint',
     });
 
-    showToast(`Case ${firNum} created successfully!${stagedFiles.length > 0 ? ` ${stagedFiles.length} evidence file(s) uploaded.` : ''}`, 'success');
+    showToast(`Case ${firNum} created securely!${stagedFiles.length > 0 ? ` ${stagedFiles.length} evidence file(s) uploaded.` : ''}`, 'success');
     onClose();
   }, [narrative, crimeType, suggestions, selectedSectionIds, manualAddedSectionIds, stagedFiles, stagedFileHashes, victimName, victimMobile, victimAddress, accusedName, accusedMobile, incidentDate, incidentLocation, user, onClose]);
 
@@ -589,26 +591,26 @@ export default function CreateCaseModal({ onClose }: { onClose: () => void }) {
             <div className="fade-in">
               <div className="form-row" style={{ marginBottom: 'var(--space-md)' }}>
                 <div className="form-group">
-                  <label className="form-label">Victim Name * <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(letters only)</span></label>
+                  <label className="form-label">Victim Name * <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(letters only)</span> <span title="Encrypted at rest"><Lock size={12} style={{ color: 'var(--govt-gold)', opacity: 0.6, verticalAlign: 'middle', marginLeft: 4 }} /></span></label>
                   <input className="form-input" value={victimName} onChange={e => setVictimName(e.target.value.replace(/[0-9]/g, ''))} placeholder="Full name" maxLength={100} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Victim Mobile * <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(numbers only)</span></label>
+                  <label className="form-label">Victim Mobile * <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(numbers only)</span> <span title="Encrypted at rest"><Lock size={12} style={{ color: 'var(--govt-gold)', opacity: 0.6, verticalAlign: 'middle', marginLeft: 4 }} /></span></label>
                   <input className="form-input" inputMode="numeric" value={victimMobile} onChange={e => { const v = e.target.value.replace(/[^0-9+]/g, ''); setVictimMobile(v.slice(0, 15)); }} placeholder="+91..." maxLength={15} />
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
-                <label className="form-label">Victim Address <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(max 300 chars)</span></label>
+                <label className="form-label">Victim Address <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(max 300 chars)</span> <span title="Encrypted at rest"><Lock size={12} style={{ color: 'var(--govt-gold)', opacity: 0.6, verticalAlign: 'middle', marginLeft: 4 }} /></span></label>
                 <input className="form-input" value={victimAddress} onChange={e => setVictimAddress(e.target.value.slice(0, 300))} placeholder="Full address" maxLength={300} />
                 {victimAddress.length > 250 && <div style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{victimAddress.length} / 300</div>}
               </div>
               <div className="form-row" style={{ marginBottom: 'var(--space-md)' }}>
                 <div className="form-group">
-                  <label className="form-label">Accused Name <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(letters only)</span></label>
+                  <label className="form-label">Accused Name <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(letters only)</span> <span title="Encrypted at rest"><Lock size={12} style={{ color: 'var(--govt-gold)', opacity: 0.6, verticalAlign: 'middle', marginLeft: 4 }} /></span></label>
                   <input className="form-input" value={accusedName} onChange={e => setAccusedName(e.target.value.replace(/[0-9]/g, ''))} placeholder="If known" maxLength={100} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Accused Mobile <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(numbers only)</span></label>
+                  <label className="form-label">Accused Mobile <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(numbers only)</span> <span title="Encrypted at rest"><Lock size={12} style={{ color: 'var(--govt-gold)', opacity: 0.6, verticalAlign: 'middle', marginLeft: 4 }} /></span></label>
                   <input className="form-input" inputMode="numeric" value={accusedMobile} onChange={e => { const v = e.target.value.replace(/[^0-9+]/g, ''); setAccusedMobile(v.slice(0, 15)); }} placeholder="+91..." maxLength={15} />
                 </div>
               </div>

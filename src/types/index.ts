@@ -52,6 +52,9 @@ export interface CaseRecord {
 
   reviewStatus?: 'pending_sho' | 'pending_legal' | 'approved' | 'returned';
   reviewComments?: ReviewComment[];
+
+  // Encryption metadata: tracks which fields are encrypted (AES-256-GCM)
+  _encrypted?: string[]; // e.g., ["victim.name", "victim.mobile", "accused.name", ...]
 }
 
 export interface PersonDetails {

@@ -14,9 +14,11 @@ import { useCaseFilters } from './cases/useCaseFilters';
 import CreateCaseModal from './cases/CreateCaseModal';
 import CaseDetailsModal from './cases/CaseDetailsModal';
 import AccessRequestModal from './cases/AccessRequestModal';
+import { useTranslation } from '../hooks/useTranslation';
 
 export default function Cases() {
   const f = useCaseFilters();
+  const { t } = useTranslation();
   const [showCreate, setShowCreate] = useState(false);
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
   const [showAccessModal, setShowAccessModal] = useState(false);
@@ -35,12 +37,12 @@ export default function Cases() {
   };
 
   const stats = [
-    { label: 'Total', count: f.counts.total, color: 'var(--text-primary)', bg: 'var(--surface-1)' },
-    { label: 'Active', count: f.counts.active, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-    { label: 'Under Review', count: f.counts.under_review, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-    { label: 'Approved', count: f.counts.approved, color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
-    { label: 'Returned', count: f.counts.returned, color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
-    { label: 'Closed', count: f.counts.closed, color: '#6b7280', bg: 'var(--surface-1)' },
+    { label: t('cases.total'), count: f.counts.total, color: 'var(--text-primary)', bg: 'var(--surface-1)' },
+    { label: t('cases.active'), count: f.counts.active, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+    { label: t('cases.underReview'), count: f.counts.under_review, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+    { label: t('cases.approved'), count: f.counts.approved, color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
+    { label: t('cases.returned'), count: f.counts.returned, color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+    { label: t('cases.closed'), count: f.counts.closed, color: '#6b7280', bg: 'var(--surface-1)' },
   ];
 
   const reviewQueue = (user.role === 'sho' || user.role === 'legal')
@@ -53,35 +55,35 @@ export default function Cases() {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><FolderOpen size={28} style={{ color: 'var(--brand-primary-light)' }} /> Cases</h1>
-          <p className="text-sm text-muted" style={{ marginTop: 4 }}>Manage investigations and case records</p>
+          <h1><FolderOpen size={28} style={{ color: 'var(--brand-primary-light)' }} /> {t('cases.title')}</h1>
+          <p className="text-sm text-muted" style={{ marginTop: 4 }}>{t('cases.manageInvestigations')}</p>
         </div>
         <div className="page-header-actions">
           <select className="form-select" style={{ width: 140 }} value={f.filterStatus} onChange={e => f.setFilterStatus(e.target.value)}>
-            <option value="all">All Status</option>
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            <option value="under_review">Under Review</option>
-            <option value="approved">Approved</option>
-            <option value="closed">Closed</option>
-            <option value="returned">Returned</option>
+            <option value="all">{t('cases.allStatus')}</option>
+            <option value="draft">{t('status.draft')}</option>
+            <option value="active">{t('status.active')}</option>
+            <option value="under_review">{t('status.under_review')}</option>
+            <option value="approved">{t('status.approved')}</option>
+            <option value="closed">{t('status.closed')}</option>
+            <option value="returned">{t('status.returned')}</option>
           </select>
           <select className="form-select" style={{ width: 160 }} value={f.filterCrimeType} onChange={e => f.setFilterCrimeType(e.target.value)}>
-            <option value="all">All Crime Types</option>
+            <option value="all">{t('cases.allCrimeTypes')}</option>
             {f.crimeTypes.map(ct => <option key={ct} value={ct}>{ct}</option>)}
           </select>
           <div className="search-box">
             <Search className="search-icon" size={16} />
-            <input placeholder="Search FIR, victim, station..." value={f.search} onChange={e => f.setSearch(e.target.value)} />
+            <input placeholder={t('placeholder.searchCases')} value={f.search} onChange={e => f.setSearch(e.target.value)} />
           </div>
           {canCreate && (
             <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Create Case
+              <Plus size={16} /> {t('cases.createCase')}
             </button>
           )}
           {inaccessibleCases.length > 0 && (
-            <button className="btn btn-secondary" onClick={() => setShowAccessModal(true)} title="Request cross-station access">
-              <Key size={16} /> Request Access
+            <button className="btn btn-secondary" onClick={() => setShowAccessModal(true)} title={t('cases.requestCrossStationAccess')}>
+              <Key size={16} /> {t('cases.requestAccess')}
               {pendingAccessCount > 0 && (
                 <span className="badge badge-warning" style={{ marginLeft: 6 }}>{pendingAccessCount}</span>
               )}
@@ -99,7 +101,7 @@ export default function Cases() {
         }}>
           <Clock size={16} style={{ color: '#f59e0b', flexShrink: 0 }} />
           <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-            You have <strong style={{ color: '#f59e0b' }}>{pendingAccessCount} pending access request(s)</strong> awaiting approval.
+            {t('cases.pendingAccessRequests', { count: pendingAccessCount })}
           </span>
         </div>
       )}
@@ -113,7 +115,7 @@ export default function Cases() {
         }}>
           <AlertCircle size={16} style={{ color: '#ef4444', flexShrink: 0 }} />
           <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            <strong style={{ color: '#ef4444' }}>{reviewQueue.length} case{reviewQueue.length > 1 ? 's' : ''}</strong> awaiting your {user.role === 'sho' ? 'SHO' : 'Legal'} review.
+            <strong style={{ color: '#ef4444' }}>{reviewQueue.length}</strong> {reviewQueue.length > 1 ? t('cases.casesAwaiting') : t('cases.caseAwaiting')} {user.role === 'sho' ? 'SHO' : 'Legal'} {t('cases.review')}.
           </span>
           <button
             className="btn btn-sm"
@@ -123,7 +125,7 @@ export default function Cases() {
             }}
             onClick={() => { f.setFilterStatus('under_review'); f.setSearch(''); f.setFilterCrimeType('all'); }}
           >
-            Show Review Queue
+            {t('cases.showReviewQueue')}
           </button>
         </div>
       )}
@@ -152,7 +154,7 @@ export default function Cases() {
           animation: 'fadeIn 0.2s ease',
         }}>
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--brand-primary)' }}>
-            {f.selectedCaseIds.size} case{f.selectedCaseIds.size > 1 ? 's' : ''} selected
+            {f.selectedCaseIds.size} {f.selectedCaseIds.size > 1 ? t('cases.casesSelected') : t('cases.caseSelected')}
           </span>
           <button
             className="btn btn-primary btn-sm"
@@ -162,25 +164,25 @@ export default function Cases() {
                 const c = f.cases.find(x => x.id === id);
                 return c && (c.status === 'active' || c.status === 'returned' || c.status === 'draft') && c.assignedOfficer === user.id;
               });
-              if (eligible.length === 0) { showToast('No eligible cases selected. Only your active/returned/draft cases can be submitted.', 'warning'); return; }
+              if (eligible.length === 0) { showToast(t('cases.noEligibleCasesSelected'), 'warning'); return; }
               eligible.forEach(id => {
                 updateCase(id, { status: 'under_review' });
                 addDiaryEntry(id, {
                   id: generateUniqueId(), caseId: id, timestamp: new Date().toISOString(),
                   action: 'Bulk Submitted for Review',
-                  description: `Case submitted for review via bulk action by ${user.name}.`,
+                  description: `${t('cases.caseSubmittedForReview')} ${t('cases.viaBulkActionBy')} ${user.name}.`,
                   performedBy: user.name, category: 'other',
                 });
               });
-              showToast(`${eligible.length} case(s) submitted for review.`, 'success');
+              showToast(`${eligible.length} ${t('cases.casesSubmittedForReview')}`, 'success');
               f.clearSelection();
               f.refresh();
             }}
           >
-            <Send size={14} /> Submit for Review
+            <Send size={14} /> {t('cases.submitForReview')}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => f.clearSelection()}>
-            Clear Selection
+            {t('cases.clearSelection')}
           </button>
         </div>
       )}
@@ -198,14 +200,14 @@ export default function Cases() {
                   style={{ width: 15, height: 15, cursor: 'pointer', accentColor: 'var(--brand-primary)' }}
                 />
               </th>
-              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('firNumber')}>FIR Number{renderSortIcon('firNumber')}</th>
-              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('crimeType')}>Crime Type{renderSortIcon('crimeType')}</th>
-              <th>Classification</th>
-              <th>Victim</th>
-              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('status')}>Status{renderSortIcon('status')}</th>
-              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('readinessScore')}>Readiness{renderSortIcon('readinessScore')}</th>
-              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('createdAt')}>Date{renderSortIcon('createdAt')}</th>
-              <th>Action</th>
+              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('firNumber')}>{t('cases.firNumber')}{renderSortIcon('firNumber')}</th>
+              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('crimeType')}>{t('cases.crimeType')}{renderSortIcon('crimeType')}</th>
+              <th>{t('cases.classification')}</th>
+              <th>{t('cases.victim')}</th>
+              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('status')}>{t('cases.status')}{renderSortIcon('status')}</th>
+              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('readinessScore')}>{t('cases.readiness')}{renderSortIcon('readinessScore')}</th>
+              <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => f.handleSort('createdAt')}>{t('cases.date')}{renderSortIcon('createdAt')}</th>
+              <th>{t('cases.action')}</th>
             </tr>
           </thead>
           <tbody>
@@ -272,7 +274,7 @@ export default function Cases() {
                 <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{formatDate(c.createdAt)}</td>
                 <td>
                   <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); setSelectedCase(c); }}>
-                    View <ChevronRight size={14} />
+                    {t('cases.view')} <ChevronRight size={14} />
                   </button>
                 </td>
               </tr>
@@ -307,8 +309,8 @@ export default function Cases() {
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40 }}>
                 <div className="empty-state">
                   <FolderOpen className="empty-state-icon" />
-                  <h3>No cases found</h3>
-                  <p>Create a new case to get started.</p>
+                  <h3>{t('cases.noCasesFound')}</h3>
+                  <p>{t('cases.createCaseToGetStarted')}</p>
                 </div>
               </td></tr>
             )}

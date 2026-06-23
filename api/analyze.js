@@ -40,10 +40,15 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 export default async function handler(req, res) {
-  // CORS headers for Vercel preview/production
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS headers — restrict to your domain only
+  const allowedOrigin = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.ALLOWED_ORIGIN || 'http://localhost:5173';
+
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
@@ -51,6 +56,21 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Session validation — require authenticated session
+  // Check for Firebase ID token in Authorization header
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  // Note: Full Firebase token verification would require admin SDK
+  // For now, we validate the token format exists
+  // In production, use firebase-admin to verify: await admin.auth().verifyIdToken(token)
+  const token = authHeader.split('Bearer ')[1];
+  if (!token || token.length < 10) {
+    return res.status(401).json({ error: 'Invalid authentication token' });
   }
 
   // Rate limit check
@@ -71,6 +91,19 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing systemPrompt or userPrompt' });
   }
 
+  // Input sanitization — prevent prompt injection
+  // Strip control characters (except newlines/tabs)
+  const sanitizePrompt = (prompt) => {
+    return prompt
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars
+      .replace(/<\|.*?\|>/g, '') // Remove special tokens
+      .replace(/\[INST\]|\[\/INST\]/g, '') // Remove instruction tags
+      .substring(0, 50000); // Hard limit
+  };
+
+  const sanitizedSystemPrompt = sanitizePrompt(systemPrompt);
+  const sanitizedUserPrompt = sanitizePrompt(userPrompt);
+
   // Input size guard — reject excessively large payloads
   if (userPrompt.length > 50000 || systemPrompt.length > 50000) {
     return res.status(413).json({ error: 'Prompt too large (max 50,000 characters each)' });
@@ -86,8 +119,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: 'system', content: sanitizedSystemPrompt },
+          { role: 'user', content: sanitizedUserPrompt },
         ],
         temperature,
         max_tokens: maxTokens,

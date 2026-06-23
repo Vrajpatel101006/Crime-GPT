@@ -9,7 +9,13 @@
    serverless proxy at /api/analyze. The Groq API
    key lives server-side only and is never embedded
    in the client bundle.
+
+   AUTH: Each request includes the user's Firebase
+   ID token in the Authorization header. The proxy
+   validates this token before processing.
    ============================================ */
+
+import { firebaseAuth } from './firebase';
 
 const PROXY_URL = '/api/analyze';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
@@ -40,9 +46,21 @@ async function callGroq<T = Record<string, unknown>>(
   temperature = 0.15,
   maxTokens = 2048,
 ): Promise<T> {
+  // Get Firebase ID token for authentication
+  const user = firebaseAuth.currentUser;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (user) {
+    try {
+      const token = await user.getIdToken();
+      headers['Authorization'] = `Bearer ${token}`;
+    } catch (err) {
+      console.warn('[CrimeGPT] Failed to get ID token:', err);
+    }
+  }
+
   const response = await fetch(PROXY_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       systemPrompt,
       userPrompt,

@@ -19,6 +19,7 @@ import {
 } from './store';
 import type { Toast } from './store';
 import type { UserRole } from './types';
+import { useTranslation } from './hooks/useTranslation';
 
 import Login from './pages/Login';
 
@@ -41,22 +42,24 @@ import './index.css';
 
 /* ─── NAVIGATION ITEMS ─── */
 /* visibleTo controls which roles see each nav item — undefined = all roles */
-const NAV_ITEMS: Array<{ path?: string; icon?: React.ComponentType<{ size?: number; className?: string }>; label: string; badge?: number; section?: boolean; adminOnly?: boolean; visibleTo?: Array<'io' | 'sho' | 'legal' | 'admin'> }> = [
-  { label: 'Overview', section: true },
-  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { label: 'Investigation', section: true },
-  { path: '/cases', icon: FolderOpen, label: 'Cases' },
-  { path: '/evidence', icon: Upload, label: 'Evidence' },
-  { path: '/legal', icon: Scale, label: 'Legal Intelligence' },
-  { path: '/diary', icon: BookOpen, label: 'Case Diary', visibleTo: ['io', 'sho', 'admin'] },
-  { path: '/documents', icon: FileText, label: 'Documents' },
-  { label: 'Workflow', section: true },
-  { path: '/review', icon: CheckSquare, label: 'Reviews', visibleTo: ['sho', 'legal', 'admin'] },
-  { path: '/audit', icon: ScrollText, label: 'Audit Logs', adminOnly: true },
-  { label: 'System', section: true },
-  { path: '/settings', icon: Settings2, label: 'Settings' },
-  { path: '/admin', icon: Settings, label: 'Administration', adminOnly: true },
-];
+function getNavItems(t: (key: string) => string): Array<{ path?: string; icon?: React.ComponentType<{ size?: number; className?: string }>; label: string; badge?: number; section?: boolean; adminOnly?: boolean; visibleTo?: Array<'io' | 'sho' | 'legal' | 'admin'> }> {
+  return [
+    { label: t('nav.overview'), section: true },
+    { path: '/', icon: LayoutDashboard, label: t('nav.dashboard') },
+    { label: t('nav.investigation'), section: true },
+    { path: '/cases', icon: FolderOpen, label: t('nav.cases') },
+    { path: '/evidence', icon: Upload, label: t('nav.evidence') },
+    { path: '/legal', icon: Scale, label: t('nav.legal') },
+    { path: '/diary', icon: BookOpen, label: t('nav.diary'), visibleTo: ['io', 'sho', 'admin'] },
+    { path: '/documents', icon: FileText, label: t('nav.documents') },
+    { label: t('nav.workflow'), section: true },
+    { path: '/review', icon: CheckSquare, label: t('nav.review'), visibleTo: ['sho', 'legal', 'admin'] },
+    { path: '/audit', icon: ScrollText, label: t('nav.audit'), adminOnly: true },
+    { label: t('nav.system'), section: true },
+    { path: '/settings', icon: Settings2, label: t('nav.settings') },
+    { path: '/admin', icon: Settings, label: t('nav.admin'), adminOnly: true },
+  ];
+}
 
 /* ─── PAGE TITLES ─── */
 const PAGE_TITLES: Record<string, string> = {
@@ -125,6 +128,7 @@ function Sidebar({ collapsed, mobileOpen, isMobile }: { collapsed: boolean; mobi
   const user = getCurrentUser();
   const userRank = getUserRank(user);
   const [, setTick] = useState(0);
+  const { t } = useTranslation();
 
   // Re-render on data changes for live badge counts
   useEffect(() => {
@@ -168,7 +172,7 @@ function Sidebar({ collapsed, mobileOpen, isMobile }: { collapsed: boolean; mobi
 
       {/* Nav */}
       <nav className="sidebar-nav">
-        {NAV_ITEMS.filter(item => {
+        {getNavItems(t).filter(item => {
           if (item.adminOnly && user.role !== 'admin') return false;
           if (item.visibleTo && !item.visibleTo.includes(user.role)) return false;
           return true;

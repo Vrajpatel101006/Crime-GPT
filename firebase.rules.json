@@ -1,0 +1,75 @@
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null",
+      "$userId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || $userId === auth.uid)"
+      }
+    },
+    "cases": {
+      ".read": "auth != null",
+      "$caseId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || newData.child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val() || data.child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())",
+        ".validate": "newData.hasChildren(['id', 'firNumber', 'crimeType', 'status', 'victim', 'accused', 'incident'])"
+      }
+    },
+    "evidence": {
+      ".read": "auth != null",
+      "$evidenceId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('cases').child(newData.child('caseId').val()).child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())"
+      }
+    },
+    "auditLogs": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      "$logId": {
+        ".write": "false"
+      }
+    },
+    "workflowEvents": {
+      ".read": "auth != null",
+      "$eventId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'sho' || root.child('users').child(auth.uid).child('role').val() === 'legal')"
+      }
+    },
+    "notifications": {
+      ".read": "auth != null",
+      "$notifId": {
+        ".write": "auth != null"
+      }
+    },
+    "diaryEntries": {
+      ".read": "auth != null",
+      "$caseId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('cases').child($caseId).child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())"
+      }
+    },
+    "documents": {
+      ".read": "auth != null",
+      "$docId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('cases').child(newData.child('caseId').val()).child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())"
+      }
+    },
+    "legalSections": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "judgments": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "roles": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "userStates": {
+      ".read": "auth != null",
+      "$userId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || $userId === auth.uid)"
+      }
+    }
+  }
+}
