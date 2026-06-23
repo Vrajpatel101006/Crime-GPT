@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     allowedHosts: [
       "postmeningeal-homeoplastic-janiyah.ngrok-free.dev",
-      "crime-gpt-v2.vercel.app"
+      "http://crime-gpt-v2.vercel.app"
     ]
   },
   build: {
