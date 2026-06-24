@@ -588,7 +588,11 @@ export const EN_TRANSLATIONS: Record<string, string> = {
 
   // ─── CONFIRMATION DIALOGS ───
   'confirm.delete': 'Are you sure you want to delete this?',
-  'confirm.deleteCase': 'Delete this case? This action cannot be undone.',
+  'confirm.deleteCase': 'Delete this case? An Admin can restore it later.',
+  'confirm.deleteCaseAdmin': 'How would you like to delete this case?',
+  'confirm.softDelete': 'Soft Delete (Can be restored)',
+  'confirm.permanentDelete': 'Permanent Delete (Cannot be restored)',
+  'confirm.permanentDeleteWarning': 'PERMANENT DELETE: This action cannot be undone. All case data, evidence, and documents will be lost. Continue?',
   'confirm.deleteEvidence': 'Delete this evidence? This action cannot be undone.',
   'confirm.deleteDocument': 'Delete this document? This action cannot be undone.',
   'confirm.approveCase': 'Approve this case?',
@@ -629,6 +633,14 @@ export const EN_TRANSLATIONS: Record<string, string> = {
   'network.syncing': 'Syncing...',
   'network.syncPending': 'Sync pending',
   'network.lastSynced': 'Last synced: {time}',
+
+  // ─── ADMIN ───
+  'admin.deletedCases': 'Deleted Cases',
+  'admin.restoreCase': 'Restore Case',
+  'admin.restoreSuccess': 'Case restored successfully',
+  'admin.permanentDeleteSuccess': 'Case permanently deleted',
+  'admin.deletedBy': 'Deleted By',
+  'admin.deletedAt': 'Deleted At',
 
   // ─── TRANSLATION ───
   'translation.pending': 'Translation pending',

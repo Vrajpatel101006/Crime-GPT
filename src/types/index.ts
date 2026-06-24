@@ -55,6 +55,11 @@ export interface CaseRecord {
 
   // Encryption metadata: tracks which fields are encrypted (AES-256-GCM)
   _encrypted?: string[]; // e.g., ["victim.name", "victim.mobile", "accused.name", ...]
+
+  // Soft delete tracking
+  deleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
 }
 
 export interface PersonDetails {
@@ -211,6 +216,10 @@ export interface Notification {
   targetRoles?: UserRole[];
   resolved?: boolean;
   resolvedAt?: string;
+  // Delivery tracking for offline support
+  delivered?: boolean;
+  deliveredAt?: string;
+  deliveryAttempts?: number;
 }
 
 export type NotificationPriority = 'critical' | 'high' | 'normal';

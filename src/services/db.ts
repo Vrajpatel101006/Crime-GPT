@@ -215,6 +215,29 @@ export async function deleteCase(id: string): Promise<void> {
   await deleteData(`/cases/${id}`);
 }
 
+// Soft delete - marks case as deleted without removing from database
+export async function softDeleteCase(id: string, userId: string): Promise<void> {
+  await patch(`/cases/${id}`, {
+    deleted: true,
+    deletedAt: new Date().toISOString(),
+    deletedBy: userId,
+  });
+}
+
+// Permanent delete - completely removes from database (admin only)
+export async function permanentlyDeleteCase(id: string): Promise<void> {
+  await deleteData(`/cases/${id}`);
+}
+
+// Restore soft-deleted case
+export async function restoreCase(id: string): Promise<void> {
+  await patch(`/cases/${id}`, {
+    deleted: false,
+    deletedAt: undefined,
+    deletedBy: undefined,
+  });
+}
+
 /* ════════════════════════════════════════════
    EVIDENCE
    ════════════════════════════════════════════ */
@@ -311,6 +334,40 @@ export async function addNotification(notif: Record<string, any>): Promise<void>
 
 export async function markNotificationRead(notifId: string): Promise<void> {
   await patch(`/notifications/${notifId}`, { read: true });
+}
+
+export async function markNotificationDelivered(notifId: string): Promise<void> {
+  await patch(`/notifications/${notifId}`, {
+    delivered: true,
+    deliveredAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteDeliveredNotifications(userId: string): Promise<void> {
+  const all = await readOnce<Record<string, any>>('/notifications');
+  if (!all) return;
+  
+  const toDelete: Record<string, any> = {};
+  for (const [id, n] of Object.entries(all)) {
+    const notif = n as any;
+    // Delete if: delivered AND read AND older than 24 hours
+    if (notif.userId === userId && 
+        notif.delivered === true && 
+        notif.read === true) {
+      const deliveredAt = new Date(notif.deliveredAt).getTime();
+      const now = Date.now();
+      const hoursSinceDelivery = (now - deliveredAt) / (1000 * 60 * 60);
+      
+      if (hoursSinceDelivery >= 24) {
+        toDelete[`/notifications/${id}`] = null;
+      }
+    }
+  }
+  
+  if (Object.keys(toDelete).length > 0) {
+    await update(ref(firebaseDb), toDelete);
+    console.log(`[CrimeGPT] Cleaned up ${Object.keys(toDelete).length} delivered notifications for user ${userId}`);
+  }
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {

@@ -10,10 +10,7 @@ import { type User, type CaseRecord, type Evidence, type AuditLog, type Notifica
 import { firebaseLogin, firebaseLogout, firebaseCreateUser, ensureDemoAuthUsers, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
 import * as db from '../services/db';
 import {
-  SEED_LEGAL_SECTIONS, SEED_JUDGMENTS, SEED_USERS, SEED_ROLES,
-  SEED_SETTINGS, SEED_CASES, SEED_EVIDENCE, SEED_DOCUMENTS,
-  SEED_DIARY_ENTRIES, SEED_AUDIT_LOGS, SEED_NOTIFICATIONS,
-  SEED_WORKFLOW_EVENTS,
+  SEED_USERS, SEED_ROLES, SEED_SETTINGS,
 } from '../data/seed';
 import { isAIConfigured, analyzeComplaint, type AIAnalysisResult } from '../services/ai';
 import * as wf from '../services/workflow';
@@ -59,69 +56,70 @@ export function subscribeInitialized(listener: () => void): () => void {
 /* ════════════════════════════════════════════
    MAIN INIT — Called once from App.tsx
    ════════════════════════════════════════════ */
-function hydrateFromLocalSeed(): void {
-  hydrateUsers(Object.fromEntries(SEED_USERS.map(u => [u.id, u])));
-  hydrateUserStates();
-  hydrateRoles(SEED_ROLES);
-  hydrateLegalSections(Object.fromEntries(SEED_LEGAL_SECTIONS.map(s => [s.id, s])));
-  hydrateJudgments(Object.fromEntries(SEED_JUDGMENTS.map(j => [j.id, j])));
-  const casesWithDiary = SEED_CASES.map(c => ({
-    ...c,
-    diaryEntries: SEED_DIARY_ENTRIES[c.id] || [],
-  }));
-  hydrateCases(Object.fromEntries(casesWithDiary.map(c => [c.id, c])));
-  hydrateEvidence(Object.fromEntries(SEED_EVIDENCE.map(e => [e.id, e])));
-  hydrateDocuments(Object.fromEntries(SEED_DOCUMENTS.map(d => [d.id, d])));
-  hydrateAuditLogs(Object.fromEntries(SEED_AUDIT_LOGS.map(l => [l.id, l])));
-  hydrateSettings(SEED_SETTINGS);
-  _notifications = [...SEED_NOTIFICATIONS];
-  _workflowEvents = [...SEED_WORKFLOW_EVENTS];
-}
 
 export async function initializeStore(): Promise<void> {
+  console.log('[CrimeGPT] initializeStore() called');
   try {
     // Ensure Firebase Auth demo users exist (for login)
+    console.log('[CrimeGPT] Step 1: Ensuring demo auth users...');
     await ensureDemoAuthUsers();
+    console.log('[CrimeGPT] Step 1 complete');
 
-    // Read data from Firebase (NO writes - data is seeded via migration script)
-    const [users, roles, legalSections, judgments, cases, evidence, documents, auditLogs, settings, allDiaryEntries] = await Promise.all([
+    // PHASE 1: Read only public data needed before login
+    console.log('[CrimeGPT] Step 2: Reading public data (users, roles, settings, legal intel)...');
+    const [users, roles, legalSections, judgments, settings] = await Promise.all([
       db.getAllUsers(),
       db.getRoles(),
       db.getAllLegalSections(),
       db.getAllJudgments(),
-      db.getAllCases(),
-      db.getAllEvidence(),
-      db.getAllDocuments(),
-      db.getAllAuditLogs(),
       db.getSettings(),
-      db.getAllDiaryEntries(),
     ]);
+    console.log('[CrimeGPT] Step 2 complete');
 
-    // Merge diary entries from /diaryEntries/ into cases before hydration
-    mergeDiaryEntriesIntoCases(cases, allDiaryEntries);
+    // DEBUG: Log raw Firebase data (phase 1)
+    console.log('[CrimeGPT DEBUG] Raw Firebase data (phase 1 - public):', {
+      users: Object.keys(users).length,
+      roles: roles ? Object.keys(roles).length : 0,
+      legalSections: Object.keys(legalSections).length,
+      judgments: Object.keys(judgments).length,
+      settings: settings ? 'exists' : 'null',
+    });
 
+    // Hydrate public data
+    console.log('[CrimeGPT] Step 3: Hydrating public store...');
     hydrateUsers(users);
     hydrateUserStates();
     hydrateRoles(roles);
     hydrateLegalSections(legalSections);
     hydrateJudgments(judgments);
-    hydrateCases(cases);
-    hydrateEvidence(evidence);
-    hydrateDocuments(documents);
-    hydrateAuditLogs(auditLogs);
     hydrateSettings(settings);
+    console.log('[CrimeGPT] Step 3 complete');
 
-    // Fallback to local seed if Firebase returned empty data
+    // DEBUG: Log hydrated data (phase 1)
+    console.log('[CrimeGPT DEBUG] Hydrated store data (phase 1 - public):', {
+      users: Object.keys(USERS).length,
+    });
+
+    // If Firebase returned empty data, show empty state (don't load seed)
+    // EXCEPTION: Users must always exist for auth to work
     if (Object.keys(users).length === 0) {
-      console.warn('[CrimeGPT] Firebase returned empty data — using local seed.');
+      console.warn('[CrimeGPT] Firebase returned empty data.');
       console.warn('[CrimeGPT] Run migration script: npx tsx scripts/seed-firebase.ts');
-      hydrateFromLocalSeed();
+      // Load users from seed so auth can work (cases will be empty)
+      hydrateUsers(Object.fromEntries(SEED_USERS.map(u => [u.id, u])));
+      hydrateRoles(SEED_ROLES);
+      hydrateSettings(SEED_SETTINGS);
     }
 
     setupRealtimeListeners();
   } catch (err) {
-    console.warn('[CrimeGPT] Firebase init failed — using local seed data.', err);
-    hydrateFromLocalSeed();
+    console.error('[CrimeGPT] Firebase init failed.', err);
+    console.error('[CrimeGPT] Error stack:', err instanceof Error ? err.stack : 'No stack');
+    // Load minimal data from seed so app can function
+    hydrateUsers(Object.fromEntries(SEED_USERS.map(u => [u.id, u])));
+    hydrateRoles(SEED_ROLES);
+    hydrateSettings(SEED_SETTINGS);
+    // Cases, evidence, documents will be empty
   }
 
   push.syncPermissionState();
@@ -135,6 +133,48 @@ export async function initializeStore(): Promise<void> {
   startDeadlineChecker();
   startGapChecker();
   _initListeners.forEach(l => l());
+}
+
+/* ════════════════════════════════════════════
+   PHASE 2: Load user-specific data after login
+   ════════════════════════════════════════════ */
+export async function loadUserDataAfterLogin(role: UserRole): Promise<void> {
+  try {
+    console.log('[CrimeGPT] Phase 2: Loading cases, evidence, documents...');
+    const [cases, evidence, documents, allDiaryEntries] = await Promise.all([
+      db.getAllCases(),
+      db.getAllEvidence(),
+      db.getAllDocuments(),
+      db.getAllDiaryEntries(),
+    ]);
+
+    // Merge diary entries into cases
+    mergeDiaryEntriesIntoCases(cases, allDiaryEntries);
+
+    // Hydrate user-specific data
+    hydrateCases(cases);
+    hydrateEvidence(evidence);
+    hydrateDocuments(documents);
+
+    console.log('[CrimeGPT DEBUG] Hydrated store data (phase 2 - user-specific):', {
+      cases: _cases.length,
+      evidence: _evidence.length,
+      documents: _documents.length,
+    });
+
+    // Admin-only: Load audit logs
+    if (role === 'admin') {
+      console.log('[CrimeGPT] Phase 2 (admin): Loading audit logs...');
+      const auditLogs = await db.getAllAuditLogs();
+      hydrateAuditLogs(auditLogs);
+      console.log('[CrimeGPT DEBUG] Audit logs loaded:', _auditLogs.length);
+    }
+
+    console.log('[CrimeGPT] Phase 2 complete');
+  } catch (err) {
+    console.error('[CrimeGPT] Phase 2 data loading failed:', err);
+    // App will show empty state for user data
+  }
 }
 
 /* ════════════════════════════════════════════
@@ -619,31 +659,33 @@ function mergeDiaryEntriesIntoCases(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateCases(data: Record<string, any>): void {
   const valid = validateBatch('case', data, SCHEMAS.case);
-  _cases = valid.map((c: any) => ({
-    id: c.id,
-    firNumber: c.firNumber,
-    caseNumber: c.caseNumber,
-    policeStation: c.policeStation,
-    assignedOfficer: c.assignedOfficer,
-    assignedStation: c.assignedStation || c.policeStation,
-    classification: c.classification,
-    clearanceRequired: c.clearanceRequired,
-    status: c.status,
-    crimeType: c.crimeType,
-    createdAt: c.createdAt,
-    updatedAt: c.updatedAt,
-    victim: c.victim,
-    accused: c.accused,
-    incident: c.incident,
-    evidenceIds: c.evidenceIds,
-    legalSectionIds: c.legalSectionIds,
-    documentIds: c.documentIds,
-    diaryEntries: c.diaryEntries,
-    readinessScore: c.readinessScore,
-    reviewStatus: c.reviewStatus,
-    reviewComments: c.reviewComments,
-    _encrypted: c._encrypted || [],
-  }));
+  _cases = valid
+    .filter((c: any) => !c.deleted)  // Filter out soft-deleted cases
+    .map((c: any) => ({
+      id: c.id,
+      firNumber: c.firNumber,
+      caseNumber: c.caseNumber,
+      policeStation: c.policeStation,
+      assignedOfficer: c.assignedOfficer,
+      assignedStation: c.assignedStation || c.policeStation,
+      classification: c.classification,
+      clearanceRequired: c.clearanceRequired,
+      status: c.status,
+      crimeType: c.crimeType,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      victim: c.victim,
+      accused: c.accused,
+      incident: c.incident,
+      evidenceIds: c.evidenceIds,
+      legalSectionIds: c.legalSectionIds,
+      documentIds: c.documentIds,
+      diaryEntries: c.diaryEntries,
+      readinessScore: c.readinessScore,
+      reviewStatus: c.reviewStatus,
+      reviewComments: c.reviewComments,
+      _encrypted: c._encrypted || [],
+    }));
 
   // Decrypt cases in background if encryption key is available
   if (encryption.isEncryptionKeyAvailable()) {
@@ -784,9 +826,57 @@ export function updateCase(id: string, updates: Partial<CaseRecord>): void {
 }
 
 export function deleteCase(id: string): void {
+  const user = getCurrentUser();
+  const caseRecord = _cases.find(c => c.id === id);
+  if (!caseRecord) return;
+  
+  // Remove from local state
   _cases = _cases.filter(c => c.id !== id);
-  db.deleteCase(id);
+  
+  // Soft delete in Firebase (marks as deleted, doesn't remove)
+  db.softDeleteCase(id, user.id);
+  
+  addAuditLog('DELETE_CASE', id, `Soft deleted case ${caseRecord.firNumber}`);
   _caseListeners.forEach(l => l());
+}
+
+// Admin permanent delete
+export async function permanentlyDeleteCase(id: string): Promise<void> {
+  const caseRecord = _cases.find(c => c.id === id);
+  
+  _cases = _cases.filter(c => c.id !== id);
+  await db.permanentlyDeleteCase(id);
+  
+  addAuditLog('PERMANENT_DELETE_CASE', id, `Permanently deleted case ${caseRecord?.firNumber}`);
+  _caseListeners.forEach(l => l());
+}
+
+// Admin restore case
+export async function restoreCase(id: string): Promise<void> {
+  const caseData = await db.getCase(id);
+  if (!caseData) return;
+  
+  await db.restoreCase(id);
+  
+  const restoredCase = {
+    ...caseData,
+    deleted: false,
+    deletedAt: undefined,
+    deletedBy: undefined,
+    diaryEntries: caseData.diaryEntries || [],
+  } as CaseRecord;
+  
+  _cases.push(restoredCase);
+  addAuditLog('RESTORE_CASE', id, `Restored case ${caseData.firNumber}`);
+  _caseListeners.forEach(l => l());
+}
+
+// Get deleted cases for admin
+export async function getDeletedCases(): Promise<CaseRecord[]> {
+  const allCases = await db.getAllCases();
+  return Object.values(allCases)
+    .filter((c: any) => c.deleted === true)
+    .map(c => ({ ...c, diaryEntries: c.diaryEntries || [] })) as CaseRecord[];
 }
 
 export function addDiaryEntry(caseId: string, entry: DiaryEntry): void {
@@ -964,8 +1054,42 @@ let _notifListeners: Array<() => void> = [];
 
 export async function loadNotifications(userId: string): Promise<void> {
   _notifications = await db.getNotifications(userId);
+  
+  // Send browser notifications only for undelivered notifications
+  const undelivered = _notifications.filter(n => !n.delivered && n.deliveryAttempts !== undefined && n.deliveryAttempts < 3);
+  
+  for (const notif of undelivered) {
+    const success = await sendBrowserNotificationForStored(notif);
+    
+    if (success) {
+      // Mark as delivered in Firebase
+      await db.markNotificationDelivered(notif.id);
+      notif.delivered = true;
+      notif.deliveredAt = new Date().toISOString();
+    } else {
+      // Increment delivery attempts
+      notif.deliveryAttempts = (notif.deliveryAttempts || 0) + 1;
+      console.warn(`[CrimeGPT] Failed to deliver notification ${notif.id}, attempt ${notif.deliveryAttempts}`);
+    }
+  }
+  
   _notifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   _notifListeners.forEach(l => l());
+}
+
+// Helper function to send browser notification for stored notification
+async function sendBrowserNotificationForStored(notif: Notification): Promise<boolean> {
+  if (!push.isPushEnabled()) return false;
+  
+  return await push.sendBrowserNotification({
+    title: notif.title,
+    safeMessage: notif.message,
+    priority: notif.priority || 'normal',
+    caseId: notif.caseId,
+    firNumber: notif.firNumber,
+    tag: `crimegpt-${notif.id}`,
+    onClickUrl: notif.link || '/',
+  });
 }
 
 export function getNotifications(): Notification[] {
@@ -979,10 +1103,27 @@ export function markNotificationRead(id: string): void {
 }
 
 export function addNotification(n: Omit<Notification, 'id'>): void {
-  const notif: Notification = { ...n, id: `n-${Date.now()}` };
+  const notif: Notification = { 
+    ...n, 
+    id: `n-${Date.now()}`,
+    delivered: false,
+    deliveredAt: undefined,
+    deliveryAttempts: 0,
+  };
   _notifications = [notif, ..._notifications];
   db.addNotification(notif);
   _notifListeners.forEach(l => l());
+  
+  // Try to send browser notification immediately (if user is online)
+  if (push.shouldSendOSNotification()) {
+    sendBrowserNotificationForStored(notif).then(success => {
+      if (success) {
+        db.markNotificationDelivered(notif.id);
+        notif.delivered = true;
+        notif.deliveredAt = new Date().toISOString();
+      }
+    });
+  }
 }
 
 export function subscribeNotifications(listener: () => void): () => void {
@@ -1017,7 +1158,26 @@ export function dispatchWorkflowEvent(event: WorkflowEvent): void {
   const recipientIds = wf.resolveRecipients(event, ctx);
   const notifications = wf.generateNotificationsFromEvent(event, recipientIds);
   event.linkedNotificationIds = notifications.map(n => n.id);
-  for (const notif of notifications) { _notifications = [notif, ..._notifications]; db.addNotification(notif); }
+  for (const notif of notifications) { 
+    // Initialize delivery tracking
+    notif.delivered = false;
+    notif.deliveredAt = undefined;
+    notif.deliveryAttempts = 0;
+    
+    _notifications = [notif, ..._notifications]; 
+    db.addNotification(notif); 
+    
+    // Try immediate delivery if user is online
+    if (push.shouldSendOSNotification()) {
+      sendBrowserNotificationForStored(notif).then(success => {
+        if (success) {
+          db.markNotificationDelivered(notif.id);
+          notif.delivered = true;
+          notif.deliveredAt = new Date().toISOString();
+        }
+      });
+    }
+  }
   if (event.caseId) {
     const de: DiaryEntry = { id: "de-wf-" + Date.now(), caseId: event.caseId, timestamp: event.createdAt, action: "Workflow: " + event.eventType.replace(/_/g, ' '), description: event.message, performedBy: event.triggeredByName, category: 'other' };
     _cases = _cases.map(c => c.id === event.caseId ? { ...c, diaryEntries: [...c.diaryEntries, de] } : c);
@@ -1461,11 +1621,20 @@ export async function login(email: string, password: string, role: UserRole): Pr
     // Decrypt any existing encrypted cases
     await decryptAllCases();
 
+    // PHASE 2: Load user-specific data after login (cases, evidence, documents, etc.)
+    console.log('[CrimeGPT] Login successful - loading user-specific data (Phase 2)...');
+    await loadUserDataAfterLogin(role);
+
     // Persist session for auto-login on refresh
     persistSession();
 
     // Load notifications for this user
     loadNotifications(userId);
+    
+    // Clean up old delivered notifications (runs in background)
+    db.deleteDeliveredNotifications(userId).catch(err => {
+      console.warn('[CrimeGPT] Notification cleanup failed:', err);
+    });
 
     // Re-initialize language from user preferences
     reinitializeLanguage();
