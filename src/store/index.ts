@@ -80,27 +80,10 @@ function hydrateFromLocalSeed(): void {
 
 export async function initializeStore(): Promise<void> {
   try {
+    // Ensure Firebase Auth demo users exist (for login)
     await ensureDemoAuthUsers();
 
-    const seeded = await db.isSeeded();
-    if (!seeded) {
-      console.log('[CrimeGPT] First load — seeding Firebase...');
-      await db.seedAll({
-        users: SEED_USERS,
-        roles: SEED_ROLES,
-        legalSections: SEED_LEGAL_SECTIONS,
-        judgments: SEED_JUDGMENTS,
-        cases: SEED_CASES,
-        evidence: SEED_EVIDENCE,
-        documents: SEED_DOCUMENTS,
-        diaryEntries: SEED_DIARY_ENTRIES,
-        auditLogs: SEED_AUDIT_LOGS,
-        notifications: SEED_NOTIFICATIONS,
-        settings: SEED_SETTINGS,
-      });
-      console.log('[CrimeGPT] Seed complete.');
-    }
-
+    // Read data from Firebase (NO writes - data is seeded via migration script)
     const [users, roles, legalSections, judgments, cases, evidence, documents, auditLogs, settings, allDiaryEntries] = await Promise.all([
       db.getAllUsers(),
       db.getRoles(),
@@ -128,34 +111,10 @@ export async function initializeStore(): Promise<void> {
     hydrateAuditLogs(auditLogs);
     hydrateSettings(settings);
 
-    // Auto-seed new legal sections and judgments if missing from Firebase
-    const existingSectionIds = new Set(Object.keys(legalSections));
-    const missingSections = SEED_LEGAL_SECTIONS.filter(s => !existingSectionIds.has(s.id));
-    const existingJudgmentIds = new Set(Object.keys(judgments));
-    const missingJudgments = SEED_JUDGMENTS.filter(j => !existingJudgmentIds.has(j.id));
-
-    if (missingSections.length > 0 || missingJudgments.length > 0) {
-      console.log(`[CrimeGPT] Seeding ${missingSections.length} new legal sections and ${missingJudgments.length} new judgments...`);
-      const updates: Record<string, unknown> = {};
-      for (const section of missingSections) {
-        updates[`/legalSections/${section.id}`] = section;
-      }
-      for (const judgment of missingJudgments) {
-        updates[`/judgments/${judgment.id}`] = judgment;
-      }
-      await db.updateMultiple(updates);
-      // Re-hydrate with merged data
-      const [newLegalSections, newJudgments] = await Promise.all([
-        db.getAllLegalSections(),
-        db.getAllJudgments(),
-      ]);
-      hydrateLegalSections(newLegalSections);
-      hydrateJudgments(newJudgments);
-      console.log(`[CrimeGPT] Seeded ${missingSections.length} new sections and ${missingJudgments.length} new judgments.`);
-    }
-
+    // Fallback to local seed if Firebase returned empty data
     if (Object.keys(users).length === 0) {
       console.warn('[CrimeGPT] Firebase returned empty data — using local seed.');
+      console.warn('[CrimeGPT] Run migration script: npx tsx scripts/seed-firebase.ts');
       hydrateFromLocalSeed();
     }
 

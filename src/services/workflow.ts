@@ -477,7 +477,6 @@ export function buildSecurityAlertEvent(title: string, message: string): Workflo
     title,
     message,
     priority: 'critical',
-    targetUserIds: undefined,
     actions: [{ label: 'View Audit Logs', type: 'navigate', payload: '/audit' }],
   });
 }
