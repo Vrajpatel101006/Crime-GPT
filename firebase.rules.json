@@ -8,15 +8,17 @@
     },
     "cases": {
       ".read": "auth != null",
+      ".write": "auth != null",
       "$caseId": {
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || newData.child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val() || data.child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())",
+        ".write": "auth != null",
         ".validate": "newData.hasChildren(['id', 'firNumber', 'crimeType', 'status', 'victim', 'accused', 'incident'])"
       }
     },
     "evidence": {
       ".read": "auth != null",
+      ".write": "auth != null",
       "$evidenceId": {
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('cases').child(newData.child('caseId').val()).child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())"
+        ".write": "auth != null"
       }
     },
     "auditLogs": {
@@ -27,27 +29,19 @@
     },
     "workflowEvents": {
       ".read": "auth != null",
-      "$eventId": {
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'sho' || root.child('users').child(auth.uid).child('role').val() === 'legal')"
-      }
+      ".write": "auth != null"
     },
     "notifications": {
       ".read": "auth != null",
-      "$notifId": {
-        ".write": "auth != null"
-      }
+      ".write": "auth != null"
     },
     "diaryEntries": {
       ".read": "auth != null",
-      "$caseId": {
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('cases').child($caseId).child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())"
-      }
+      ".write": "auth != null"
     },
     "documents": {
       ".read": "auth != null",
-      "$docId": {
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('cases').child(newData.child('caseId').val()).child('assignedOfficer').val() === root.child('users').child(auth.uid).child('badge').val())"
-      }
+      ".write": "auth != null"
     },
     "legalSections": {
       ".read": "auth != null",
@@ -67,8 +61,9 @@
     },
     "userStates": {
       ".read": "auth != null",
+      ".write": "auth != null",
       "$userId": {
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || $userId === auth.uid)"
+        ".write": "auth != null"
       }
     }
   }

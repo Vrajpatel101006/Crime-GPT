@@ -30,6 +30,15 @@ export default function CaseDetailsModal({ caseData, onClose }: { caseData: Case
   const [editOfficer, setEditOfficer] = useState(false);
   const [newOfficerId, setNewOfficerId] = useState(caseData.assignedOfficer);
 
+  // NEW: Case details editing state
+  const isAssignedIO = user.id === caseData.assignedOfficer;
+  const canEditCase = isAssignedIO || user.role === 'admin';
+  const [editCaseDetails, setEditCaseDetails] = useState(false);
+  const [editVictim, setEditVictim] = useState({ ...caseData.victim });
+  const [editAccused, setEditAccused] = useState({ ...caseData.accused });
+  const [editIncident, setEditIncident] = useState({ ...caseData.incident });
+  const [editCrimeType, setEditCrimeType] = useState(caseData.crimeType);
+
   const caseStation = caseData.assignedStation || caseData.policeStation;
   const stationOfficers = Object.values(getAllUsers()).filter(u => u.station === caseStation && (u.role === 'io' || u.role === 'sho'));
 
@@ -104,12 +113,6 @@ export default function CaseDetailsModal({ caseData, onClose }: { caseData: Case
     setStatusLoading(false);
   };
 
-  // What action buttons to show?
-  const isAssignedIO = user.id === caseData.assignedOfficer;
-  const canSubmitReview = isAssignedIO && (caseData.status === 'active' || caseData.status === 'returned' || caseData.status === 'draft');
-  const canApproveOrReturn = (user.role === 'sho' || user.role === 'legal') && caseData.status === 'under_review';
-  const canClose = user.role === 'admin' && caseData.status === 'approved';
-
   const handleSaveSecurity = () => {
     updateCase(caseData.id, { classification: newClassification, clearanceRequired: newClearance as ClearanceLevel });
     setEditSecurity(false);
@@ -130,6 +133,49 @@ export default function CaseDetailsModal({ caseData, onClose }: { caseData: Case
     setEditOfficer(false);
     showToast(`Case reassigned to ${newOfficer?.name || newOfficerId}.`, 'success');
   };
+
+  // NEW: Handler for saving case details edits
+  const handleSaveCaseDetails = () => {
+    if (!editVictim.name || !editVictim.mobile) {
+      showToast('Victim name and mobile are required.', 'warning');
+      return;
+    }
+    if (!editIncident.date || !editIncident.location) {
+      showToast('Incident date and location are required.', 'warning');
+      return;
+    }
+
+    updateCase(caseData.id, {
+      victim: editVictim,
+      accused: editAccused,
+      incident: editIncident,
+      crimeType: editCrimeType,
+    });
+
+    addDiaryEntry(caseData.id, {
+      id: generateUniqueId(), caseId: caseData.id,
+      timestamp: new Date().toISOString(),
+      action: 'Case Details Updated',
+      description: `Case details edited by ${user.name}: victim, accused, incident information updated.`,
+      performedBy: user.name, category: 'other',
+    });
+
+    setEditCaseDetails(false);
+    showToast('Case details updated successfully.', 'success');
+  };
+
+  const handleCancelEdit = () => {
+    setEditCaseDetails(false);
+    setEditVictim({ ...caseData.victim });
+    setEditAccused({ ...caseData.accused });
+    setEditIncident({ ...caseData.incident });
+    setEditCrimeType(caseData.crimeType);
+  };
+
+  // What action buttons to show?
+  const canSubmitReview = isAssignedIO && (caseData.status === 'active' || caseData.status === 'returned' || caseData.status === 'draft');
+  const canApproveOrReturn = (user.role === 'sho' || user.role === 'legal') && caseData.status === 'under_review';
+  const canClose = user.role === 'admin' && caseData.status === 'approved';
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -155,7 +201,24 @@ export default function CaseDetailsModal({ caseData, onClose }: { caseData: Case
               )}
             </div>
           </div>
-          <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {canEditCase && tab === 'details' && !editCaseDetails && (
+              <button className="btn btn-primary btn-sm" onClick={() => setEditCaseDetails(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Edit3 size={14} /> Edit Case
+              </button>
+            )}
+            {canEditCase && tab === 'details' && editCaseDetails && (
+              <>
+                <button className="btn btn-success btn-sm" onClick={handleSaveCaseDetails} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={14} /> Save Changes
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={handleCancelEdit}>
+                  Cancel
+                </button>
+              </>
+            )}
+            <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
+          </div>
         </div>
 
         <div className="tabs" style={{ padding: '0 var(--space-lg)', margin: 0 }}>
@@ -413,12 +476,33 @@ export default function CaseDetailsModal({ caseData, onClose }: { caseData: Case
                   <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <User size={16} style={{ color: 'var(--brand-info)' }} /> Victim Details
                   </div>
-                  <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div><strong>Name:</strong> {caseData.victim.name}</div>
-                    <div><strong>Mobile:</strong> {caseData.victim.mobile}</div>
-                    <div><strong>Address:</strong> {caseData.victim.address}</div>
-                    {caseData.victim.age && <div><strong>Age:</strong> {caseData.victim.age}</div>}
-                  </div>
+                  {editCaseDetails ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Name *</label>
+                        <input className="form-input" value={editVictim.name} onChange={e => setEditVictim({ ...editVictim, name: e.target.value })} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Mobile *</label>
+                        <input className="form-input" value={editVictim.mobile} onChange={e => setEditVictim({ ...editVictim, mobile: e.target.value })} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Address</label>
+                        <input className="form-input" value={editVictim.address || ''} onChange={e => setEditVictim({ ...editVictim, address: e.target.value })} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Age</label>
+                        <input className="form-input" type="number" value={editVictim.age || ''} onChange={e => setEditVictim({ ...editVictim, age: Number(e.target.value) || undefined })} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div><strong>Name:</strong> {caseData.victim.name}</div>
+                      <div><strong>Mobile:</strong> {caseData.victim.mobile}</div>
+                      <div><strong>Address:</strong> {caseData.victim.address}</div>
+                      {caseData.victim.age && <div><strong>Age:</strong> {caseData.victim.age}</div>}
+                    </div>
+                  )}
                 </div>
 
                 {/* Accused */}
@@ -426,11 +510,28 @@ export default function CaseDetailsModal({ caseData, onClose }: { caseData: Case
                   <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <AlertCircle size={16} style={{ color: 'var(--brand-danger)' }} /> Accused Details
                   </div>
-                  <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div><strong>Name:</strong> {caseData.accused.name}</div>
-                    <div><strong>Mobile:</strong> {caseData.accused.mobile || 'N/A'}</div>
-                    <div><strong>Address:</strong> {caseData.accused.address || 'Unknown'}</div>
-                  </div>
+                  {editCaseDetails ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Name</label>
+                        <input className="form-input" value={editAccused.name || ''} onChange={e => setEditAccused({ ...editAccused, name: e.target.value })} placeholder="Unknown" />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Mobile</label>
+                        <input className="form-input" value={editAccused.mobile || ''} onChange={e => setEditAccused({ ...editAccused, mobile: e.target.value })} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Address</label>
+                        <input className="form-input" value={editAccused.address || ''} onChange={e => setEditAccused({ ...editAccused, address: e.target.value })} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div><strong>Name:</strong> {caseData.accused.name}</div>
+                      <div><strong>Mobile:</strong> {caseData.accused.mobile || 'N/A'}</div>
+                      <div><strong>Address:</strong> {caseData.accused.address || 'Unknown'}</div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -439,11 +540,36 @@ export default function CaseDetailsModal({ caseData, onClose }: { caseData: Case
                 <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <MapPin size={16} style={{ color: 'var(--brand-warning)' }} /> Incident Details
                 </div>
-                <div style={{ display: 'flex', gap: 'var(--space-lg)', fontSize: '0.85rem', marginBottom: 12 }}>
-                  <div><Calendar size={13} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong>Date:</strong> {caseData.incident.date}</div>
-                  <div><MapPin size={13} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong>Location:</strong> {caseData.incident.location}</div>
-                </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>{caseData.incident.narrative}</p>
+                {editCaseDetails ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Date *</label>
+                        <input className="form-input" type="date" value={editIncident.date || ''} onChange={e => setEditIncident({ ...editIncident, date: e.target.value })} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Location *</label>
+                        <input className="form-input" value={editIncident.location || ''} onChange={e => setEditIncident({ ...editIncident, location: e.target.value })} />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Crime Type</label>
+                      <input className="form-input" value={editCrimeType} onChange={e => setEditCrimeType(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}>Narrative / Description</label>
+                      <textarea className="form-textarea" rows={5} value={editIncident.narrative || ''} onChange={e => setEditIncident({ ...editIncident, narrative: e.target.value })} />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 'var(--space-lg)', fontSize: '0.85rem', marginBottom: 12 }}>
+                      <div><Calendar size={13} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong>Date:</strong> {caseData.incident.date}</div>
+                      <div><MapPin size={13} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong>Location:</strong> {caseData.incident.location}</div>
+                    </div>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>{caseData.incident.narrative}</p>
+                  </>
+                )}
               </div>
             </div>
           )}

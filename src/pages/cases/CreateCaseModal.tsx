@@ -7,7 +7,7 @@ import {
 import {
   getCurrentUser, simulateEntityExtraction, simulateLegalAnalysis,
   generateUniqueId, showToast, addCase, updateCase, addEvidence, addDiaryEntry,
-  getLegalSections, encryptCaseForStorage
+  getLegalSections
 } from '../../store';
 import type { CaseRecord, LegalSuggestion, Judgment, Evidence, ExtractedEntity } from '../../types';
 import { CRIME_TEMPLATES } from './caseConstants';
@@ -216,9 +216,8 @@ export default function CreateCaseModal({ onClose }: { onClose: () => void }) {
       reviewStatus: 'pending_sho',
     };
 
-    // Encrypt PII fields before storage (AES-256-GCM)
-    const encryptedCase = await encryptCaseForStorage(newCase);
-    addCase(encryptedCase);
+    // Add case directly (no encryption)
+    addCase(newCase);
 
     // Upload staged evidence files
     if (stagedFiles.length > 0) {

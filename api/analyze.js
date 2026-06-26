@@ -85,7 +85,7 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'AI service not configured' });
   }
 
-  const { systemPrompt, userPrompt, temperature = 0.15, maxTokens = 2048 } = req.body || {};
+  const { systemPrompt, userPrompt, temperature = 0.15, maxTokens = 4096 } = req.body || {};
 
   if (!systemPrompt || !userPrompt) {
     return res.status(400).json({ error: 'Missing systemPrompt or userPrompt' });
@@ -109,40 +109,66 @@ export default async function handler(req, res) {
     return res.status(413).json({ error: 'Prompt too large (max 50,000 characters each)' });
   }
 
-  try {
-    const groqResponse = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [
-          { role: 'system', content: sanitizedSystemPrompt },
-          { role: 'user', content: sanitizedUserPrompt },
-        ],
-        temperature,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-      }),
-    });
+  // Retry logic with exponential backoff
+  const MAX_RETRIES = 3;
+  const BASE_DELAY_MS = 1000;
+  
+  async function callGroqWithRetry(retryCount = 0) {
+    try {
+      const groqResponse = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: [
+            { role: 'system', content: sanitizedSystemPrompt },
+            { role: 'user', content: sanitizedUserPrompt },
+          ],
+          temperature,
+          max_tokens: maxTokens,
+          response_format: { type: 'json_object' },
+        }),
+      });
 
-    if (!groqResponse.ok) {
-      const errText = await groqResponse.text();
-      console.error('[CrimeGPT Proxy] Groq error:', groqResponse.status, errText);
-      return res.status(groqResponse.status).json({ error: 'AI provider error' });
+      if (!groqResponse.ok) {
+        const errText = await groqResponse.text();
+        console.error('[CrimeGPT Proxy] Groq error:', groqResponse.status, errText);
+        
+        // Retry on rate limits (429) and server errors (5xx)
+        if ((groqResponse.status === 429 || groqResponse.status >= 500) && retryCount < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * Math.pow(2, retryCount); // Exponential backoff: 1s, 2s, 4s
+          console.log(`[CrimeGPT Proxy] Retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return callGroqWithRetry(retryCount + 1);
+        }
+        
+        return res.status(groqResponse.status).json({ error: 'AI provider error' });
+      }
+
+      const data = await groqResponse.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        return res.status(502).json({ error: 'Empty response from AI provider' });
+      }
+
+      return res.status(200).json({ content });
+    } catch (err) {
+      console.error('[CrimeGPT Proxy] Exception:', err.message);
+      
+      // Retry on network errors
+      if (retryCount < MAX_RETRIES) {
+        const delay = BASE_DELAY_MS * Math.pow(2, retryCount);
+        console.log(`[CrimeGPT Proxy] Retrying after network error in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return callGroqWithRetry(retryCount + 1);
+      }
+      
+      return res.status(500).json({ error: 'Internal proxy error after retries' });
     }
-
-    const data = await groqResponse.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) {
-      return res.status(502).json({ error: 'Empty response from AI provider' });
-    }
-
-    return res.status(200).json({ content });
-  } catch (err) {
-    console.error('[CrimeGPT Proxy] Exception:', err.message);
-    return res.status(500).json({ error: 'Internal proxy error' });
   }
+
+  return callGroqWithRetry();
 }

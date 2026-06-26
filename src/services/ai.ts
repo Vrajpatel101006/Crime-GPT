@@ -121,12 +121,22 @@ export interface AIAnalysisResult {
   evidence: string[];
   summary: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
+  // NEW: Deep case understanding fields
+  caseUnderstanding: string;        // 3-5 paragraph detailed analysis for officers
+  modus_operandi: string;           // How the crime was executed (step-by-step)
+  investigationRecommendations: string[];  // Specific actionable steps
+  riskFactors: string[];            // Escalation risks, evidence destruction risks
+  connectedCrimes: string[];        // Potential related offences
+  evidenceGap: string[];            // What evidence is missing but needed
+  financialTrail: string;           // Money flow analysis if applicable
+  timeline: Array<{ date: string; event: string }>; // Chronological sequence
 }
 
 const ANALYSIS_SYSTEM_PROMPT = `You are CrimeGPT 2.0, an advanced AI assistant for the Gujarat Police Cyber Crime Division, India. Your job is to analyze crime complaints and extract structured information with extremely high accuracy.
 
 CRITICAL RULES:
-1. Extract ALL entities mentioned in the narrative — names, phone numbers, addresses, dates, amounts, account numbers, vehicle numbers, UPI IDs, emails, Aadhaar, PAN, etc.
+1. Extract ALL entities mentioned DIRECTLY AND INDIRECTLY — names, phone numbers, addresses, dates, amounts, account numbers, vehicle numbers, UPI IDs, emails, Aadhaar, PAN, URLs, organizations, etc.
+1a. INDIRECT EXTRACTION: If the narrative mentions "received a WhatsApp message from unknown number", extract "WhatsApp" as organization and infer that a mobile number exists (even if not explicitly stated). If it says "transferred money to bank account", infer that bank account details exist. Extract implied entities.
 2. Distinguish clearly between VICTIM (the person who suffered) and ACCUSED (the person who committed the crime). If the narrative uses "I" or "my", that refers to the victim/complainant.
 3. For dates: convert to YYYY-MM-DD ONLY when the narrative provides a specific day (e.g., "15 January 2025" → "2025-01-15"). If only month/year is given (no specific day), preserve the original text as-is (e.g., "January 2025" → "January 2025"). Do NOT fabricate a specific day. If no date is mentioned at all, use empty string.
 4. For phone numbers: extract with country code if available, format as +91XXXXXXXXXX for Indian numbers.
@@ -136,12 +146,12 @@ CRITICAL RULES:
 5c. For data volume: If a number is followed by "GB", "MB", "TB", "KB", or describes data size, use entity type "data_volume".
 5d. CRITICAL: Never classify a count of people/records as "amount" just because it is a large number. Always check the semantic context.
 5e. CRITICAL: Always extract the PRIMARY financial loss/investment amount as a separate entity. If the narrative mentions a total amount lost, invested, or defrauded (e.g., "lost ₹12 lakh", "invested ₹12,40,000", "defrauded of ₹X"), it MUST be captured as a distinct "amount" entity — even if smaller amounts (demands, fees, installments) are also mentioned. Never skip the largest monetary figure.
-6. Crime classification must be specific — not just "General Offence". Use specific categories like: Cyber Fraud, Online Banking Fraud, UPI Payment Fraud, Identity Theft, Phishing Attack, Ransomware, Data Breach, Theft, Burglary, Housebreaking, Assault, Criminal Intimidation, Forgery, Cheating, Murder, Attempt to Murder, Kidnapping, Sexual Harassment, Domestic Violence, Property Dispute, Narcotics Offence, Money Laundering, Corruption, Dowry Death, Eve Teasing, Stalking, Criminal Breach of Trust, Criminal Defamation, Rioting, Unlawful Assembly, etc.
+6. Crime classification must be specific — not just "General Offence". Use specific categories like: Cyber Fraud, Online Banking Fraud, UPI Payment Fraud, Identity Theft, Phishing Attack, Ransomware, Data Breach, Investment Scam, Romance Scam, Job Fraud, Cryptocurrency Fraud, NFT Scam, Loan App Harassment, SIM Swap Fraud, ATM Skimming, Card Cloning, QR Code Fraud, Fake KYC Update, Theft, Burglary, Housebreaking, Assault, Criminal Intimidation, Forgery, Cheating, Murder, Attempt to Murder, Kidnapping, Sexual Harassment, Domestic Violence, Property Dispute, Narcotics Offence, Money Laundering, Corruption, Dowry Death, Eve Teasing, Stalking, Criminal Breach of Trust, Criminal Defamation, Rioting, Unlawful Assembly, etc.
 7. If a field is not mentioned in the narrative, use empty string "" for strings and empty arrays [] for lists. NEVER invent or hallucinate data that is not in the narrative.
 8. The "summary" should be a concise 2-3 sentence factual summary of the crime.
 9. Severity: low (minor offences), medium (moderate crimes), high (serious crimes), critical (heinous/organized crime/large-scale).
 10. For "witnesses": extract any person mentioned who saw or can testify about the incident.
-11. For "evidence": list any physical or digital evidence mentioned (screenshots, bank statements, CCTV footage, weapons, documents, etc.).
+11. For "evidence": list any physical or digital evidence mentioned (screenshots, bank statements, CCTV footage, weapons, documents, etc.) AND infer likely evidence based on crime type.
 12. Handle narratives in English, Hindi, or Gujarati — extract entities regardless of language.
 13. Entity type examples for clarity:
     - "147 million consumers affected" → type: "affected_individuals", value: "147 million"
@@ -150,6 +160,22 @@ CRITICAL RULES:
     - "10,000 records compromised" → type: "records_exposed", value: "10,000"
     - "$50,000 transferred" → type: "amount", value: "$50,000"
     - "5 companies affected" → type: "organizations_affected", value: "5"
+
+DEEP CASE ANALYSIS REQUIREMENTS:
+14. caseUnderstanding: Provide a detailed 3-5 paragraph analysis explaining:
+    - What happened (factual sequence)
+    - How the crime was executed (modus operandi)
+    - Who are the key actors and their roles
+    - What is the scale and impact
+    - What are the legal implications
+    - What patterns or red flags are visible
+15. modus_operandi: Explain step-by-step HOW the crime was committed, from start to finish
+16. investigationRecommendations: Provide 5-10 SPECIFIC, ACTIONABLE steps the investigating officer should take immediately (e.g., "Obtain server logs from [platform]", "Trace bank account number XXXX under Section 91 BNSS", "Issue preservation notice to [company]", etc.)
+17. riskFactors: Identify risks like: evidence destruction, accused fleeing, repeat offences, organized crime links, financial loss escalation, victim safety threats
+18. connectedCrimes: List potential related offences that may have been committed (e.g., if it's a cyber fraud, connected crimes could be money laundering, forgery of documents, criminal conspiracy, etc.)
+19. evidenceGap: List critical evidence that is NOT mentioned in the narrative but is REQUIRED for prosecution (e.g., "Bank statement showing transaction", "Server logs from WhatsApp", "CCTV footage from location", "Forensic analysis of device")
+20. financialTrail: If money is involved, explain the flow: Victim → Intermediary (if any) → Accused → Final destination. Include all amounts, accounts, and platforms mentioned.
+21. timeline: Create a chronological sequence of ALL events mentioned in the narrative with dates (or approximate dates if exact date not provided)
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -202,7 +228,18 @@ OUTPUT FORMAT (strict JSON):
   ],
   "evidence": ["CCTV footage", "Bank statement", "WhatsApp screenshots"],
   "summary": "Concise factual summary of the crime in 2-3 sentences.",
-  "severity": "low|medium|high|critical"
+  "severity": "low|medium|high|critical",
+  "caseUnderstanding": "Detailed 3-5 paragraph analysis explaining what happened, how it was executed, who the key actors are, scale and impact, legal implications, and visible patterns or red flags.",
+  "modus_operandi": "Step-by-step explanation of how the crime was committed from start to finish.",
+  "investigationRecommendations": ["Specific actionable step 1", "Specific actionable step 2", "Specific actionable step 3"],
+  "riskFactors": ["Risk factor 1", "Risk factor 2"],
+  "connectedCrimes": ["Connected crime 1", "Connected crime 2"],
+  "evidenceGap": ["Missing evidence 1", "Missing evidence 2"],
+  "financialTrail": "Explanation of money flow from victim to accused, including all amounts, accounts, and platforms.",
+  "timeline": [
+    {"date": "2025-01-15", "event": "Victim received fraudulent call"},
+    {"date": "2025-01-16", "event": "Money transferred to accused account"}
+  ]
 }`;
 
 export async function analyzeComplaint(narrative: string): Promise<AIAnalysisResult> {
@@ -210,7 +247,7 @@ export async function analyzeComplaint(narrative: string): Promise<AIAnalysisRes
     ANALYSIS_SYSTEM_PROMPT,
     `Analyze the following crime complaint narrative and extract all information:\n\n---\n${narrative}\n---`,
     0.1,
-    2048,
+    4096,  // Increased from 2048 to accommodate detailed analysis
   );
 
   // Ensure all fields exist with defaults
@@ -248,6 +285,15 @@ export async function analyzeComplaint(narrative: string): Promise<AIAnalysisRes
     evidence: Array.isArray(result.evidence) ? result.evidence : [],
     summary: result.summary || '',
     severity: result.severity || 'medium',
+    // New fields
+    caseUnderstanding: result.caseUnderstanding || '',
+    modus_operandi: result.modus_operandi || '',
+    investigationRecommendations: Array.isArray(result.investigationRecommendations) ? result.investigationRecommendations : [],
+    riskFactors: Array.isArray(result.riskFactors) ? result.riskFactors : [],
+    connectedCrimes: Array.isArray(result.connectedCrimes) ? result.connectedCrimes : [],
+    evidenceGap: Array.isArray(result.evidenceGap) ? result.evidenceGap : [],
+    financialTrail: result.financialTrail || '',
+    timeline: Array.isArray(result.timeline) ? result.timeline : [],
   };
 }
 
@@ -263,26 +309,43 @@ export interface AILegalSuggestion {
   confidence: number;
   reasoning: string;
   matchedKeywords: string[];
+  // NEW FIELDS for enhanced legal analysis
+  elementsToProve: string[];        // What must be established in court
+  requiredEvidence: string[];        // Specific evidence needed
+  potentialDefenses: string[];       // Likely defenses accused may raise
+  sectionPriority: 'primary' | 'secondary' | 'ancillary';
+  punishment: string;                // From legal section database
+  relatedSections: string[];         // Connected sections to consider
 }
 
 const LEGAL_SYSTEM_PROMPT = `You are a legal intelligence AI trained on Indian criminal law — specifically the Bharatiya Nyaya Sanhita (BNS) 2023, Bharatiya Nagarik Suraksha Sanhita (BNSS) 2023, and Bharatiya Sakshya Adhiniyam (BSA) 2023.
 
-Your task: Given a crime complaint narrative and a list of available legal sections, identify which sections apply to this case.
+Your task: Given a crime complaint narrative, case understanding analysis, and a list of available legal sections, identify which sections apply to this case with deep legal reasoning.
 
 RULES:
 1. You MUST only recommend sections from the provided list below. Do NOT invent sections that don't exist in the list.
-2. For each recommended section, provide:
+2. For each recommended section, provide COMPREHENSIVE analysis:
    - sectionId: the exact ID from the provided list
    - confidence: a score between 0.0 and 1.0 indicating how strongly this section applies
-   - reasoning: a clear explanation of WHY this section applies to this specific case
+   - reasoning: a detailed explanation of WHY this section applies, referencing specific facts from the case
    - matchedKeywords: keywords/phrases from the narrative that triggered this match
+   - elementsToProve: List the legal elements that must be established in court to prove this offence
+   - requiredEvidence: List specific types of evidence needed to prove each element
+   - potentialDefenses: List likely defenses the accused might raise
+   - sectionPriority: Classify as 'primary' (direct match to main offence), 'secondary' (connected offence), or 'ancillary' (procedural/evidence section)
+   - punishment: State the punishment as mentioned in the section
+   - relatedSections: List other sections from the catalog that are commonly charged together
 3. Rank by confidence (highest first). Return maximum 6 sections.
-4. Consider the FULL narrative context — not just individual keywords. Understand the overall crime scenario.
-5. Consider related/connected offences. For example, a cyber fraud case may involve both cheating (BNS-318) and forgery (BNS-336) sections.
-6. Confidence scoring guide:
-   - 0.90-0.98: Direct, strong match — the narrative clearly describes this offence
-   - 0.75-0.89: Strong indicators — very likely applicable
-   - 0.60-0.74: Possible match — some indicators present
+4. Think like a PROSECUTOR building a case - consider what sections will result in successful conviction.
+5. Consider the FULL narrative context and case understanding — not just individual keywords.
+6. Consider related/connected offences. For example, a cyber fraud case may involve:
+   - Primary: BNS-318 (Cheating)
+   - Secondary: BNS-336 (Forgery), BNS-61 (Criminal Conspiracy)
+   - Ancillary: IT Act-66D (Cheating by personation using computer)
+7. Confidence scoring guide:
+   - 0.90-0.98: Direct, strong match — all elements clearly present in the narrative
+   - 0.75-0.89: Strong indicators — most elements present, very likely applicable
+   - 0.60-0.74: Possible match — some elements present, may require further investigation
    - Below 0.60: Do NOT include
 
 OUTPUT FORMAT (strict JSON):
@@ -291,11 +354,17 @@ OUTPUT FORMAT (strict JSON):
     {
       "sectionId": "exact-id-from-list",
       "sectionNumber": "section number",
-      "act": "BNS/BNSS/BSA",
+      "act": "BNS/BNSS/BSA/IT Act",
       "title": "section title",
       "confidence": 0.92,
-      "reasoning": "The narrative describes... which directly falls under this section because...",
-      "matchedKeywords": ["keyword1", "keyword2"]
+      "reasoning": "The narrative describes [specific facts] which directly falls under this section because [legal reasoning]. The key elements of [element 1], [element 2], and [element 3] are all present.",
+      "matchedKeywords": ["keyword1", "keyword2"],
+      "elementsToProve": ["Element 1 that must be proved", "Element 2"],
+      "requiredEvidence": ["Type of evidence 1", "Type of evidence 2"],
+      "potentialDefenses": ["Possible defense 1", "Possible defense 2"],
+      "sectionPriority": "primary|secondary|ancillary",
+      "punishment": "Imprisonment up to X years and/or fine of Y rupees",
+      "relatedSections": ["related-section-id-1", "related-section-id-2"]
     }
   ]
 }`;
@@ -458,6 +527,7 @@ export async function suggestLegalSections(
   narrative: string,
   sections: Array<{ id: string; act: string; sectionNumber: string; title: string; description: string; keywords: string[]; crimeTypes: string[] }>,
   crimeCategory?: string,
+  caseUnderstanding?: string,  // NEW: Deep case analysis from complaint analysis
 ): Promise<AILegalSuggestion[]> {
   // Step 1: Semantic pre-filtering to reduce catalog size
   // Uses concept groups, synonyms, stemming, and fuzzy matching
@@ -519,13 +589,15 @@ export async function suggestLegalSections(
     `[ID:${s.id}] ${s.act}-${s.sectionNumber}: ${s.title} | Keywords: ${s.keywords.slice(0, 8).join(', ')} | Crimes: ${(s.crimeTypes || []).slice(0, 3).join(', ')}`
   ).join('\n');
 
-  const userPrompt = `Analyze this crime complaint and identify applicable legal sections:\n\n--- NARRATIVE ---\n${narrative}\n\n--- AVAILABLE SECTIONS (pre-filtered for relevance) ---\n${sectionCatalog}\n\nReturn the top matching sections as JSON.`;
+  // NEW: Include case understanding if available
+  const caseContext = caseUnderstanding ? `\n\n--- CASE UNDERSTANDING (AI Analysis) ---\n${caseUnderstanding}\n` : '';
+  const userPrompt = `Analyze this crime complaint and identify applicable legal sections:\n\n--- NARRATIVE ---\n${narrative}${caseContext}\n--- AVAILABLE SECTIONS (pre-filtered for relevance) ---\n${sectionCatalog}\n\nReturn the top matching sections as JSON with comprehensive legal analysis.`;
 
   const result = await callGroq<{ suggestions: Array<Record<string, unknown>> }>(
     LEGAL_SYSTEM_PROMPT,
     userPrompt,
     0.2,
-    2048,
+    4096,  // Increased to accommodate detailed legal analysis
   );
 
   const suggestions: AILegalSuggestion[] = [];
@@ -542,6 +614,13 @@ export async function suggestLegalSections(
           confidence: Math.min(0.98, Math.max(0.5, Number(s.confidence) || 0.7)),
           reasoning: String(s.reasoning || 'Matched by AI analysis of complaint narrative.'),
           matchedKeywords: Array.isArray(s.matchedKeywords) ? (s.matchedKeywords as string[]) : [],
+          // New fields
+          elementsToProve: Array.isArray(s.elementsToProve) ? (s.elementsToProve as string[]) : [],
+          requiredEvidence: Array.isArray(s.requiredEvidence) ? (s.requiredEvidence as string[]) : [],
+          potentialDefenses: Array.isArray(s.potentialDefenses) ? (s.potentialDefenses as string[]) : [],
+          sectionPriority: (s.sectionPriority === 'primary' || s.sectionPriority === 'secondary' || s.sectionPriority === 'ancillary') ? s.sectionPriority as 'primary' | 'secondary' | 'ancillary' : 'primary',
+          punishment: String(s.punishment || matchedSection.description.substring(0, 150) + '...'),
+          relatedSections: Array.isArray(s.relatedSections) ? (s.relatedSections as string[]) : [],
         });
       }
     }
@@ -562,16 +641,26 @@ export interface AIJudgmentResult {
   citation: string;
   summary: string;
   relevance: string;
+  // NEW FIELDS
+  keyPrinciple: string;           // Main legal principle from judgment
+  applicabilityScore: number;     // How applicable to current case (0-1)
 }
 
-const JUDGMENT_SYSTEM_PROMPT = `You are a legal research AI specializing in Indian criminal case law. Given a crime type and applicable legal sections, identify relevant landmark judgments from Indian courts.
+const JUDGMENT_SYSTEM_PROMPT = `You are a legal research AI specializing in Indian criminal case law. Given a crime type, case understanding, and applicable legal sections, identify relevant landmark judgments from Indian courts.
 
 RULES:
-1. Only suggest REAL, well-known Indian Supreme Court or High Court judgments. Do NOT invent fake cases.
-2. If you're not sure about a specific judgment, provide the most well-known cases for that crime category.
-3. Include: case title, court name, year, citation (if known), a brief summary, and why it's relevant.
-4. Return maximum 4 judgments, ranked by relevance.
-5. Focus on judgments that set important precedents for the specific crime type.
+1. ONLY suggest REAL, well-known Indian Supreme Court or High Court judgments. Do NOT invent fake cases.
+2. For each judgment, explain SPECIFICALLY how it applies to this case - what precedent it sets and how it helps the prosecution.
+3. Include: case title, court name, year, citation (if known), a brief summary, and detailed relevance explanation.
+4. Return maximum 5 judgments, ranked by relevance (most relevant first).
+5. Focus on judgments that set important precedents for the specific crime type AND the factual scenario.
+6. Prioritize judgments that address:
+   - Evidence standards for this type of crime
+   - Elements that must be proved
+   - Common defenses and how courts have ruled on them
+   - Sentencing guidelines
+   - Procedural requirements
+7. If the case involves cyber/digital crimes, prioritize recent judgments (2015 onwards) dealing with electronic evidence.
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -582,20 +671,27 @@ OUTPUT FORMAT (strict JSON):
       "year": 2023,
       "citation": "AIR 2023 SC 1234 or (2023) X SCC 123",
       "summary": "Brief 2-3 sentence summary of the judgment and its holding",
-      "relevance": "Why this judgment is relevant to the current case"
+      "relevance": "Detailed explanation of why this judgment is relevant to the current case, what precedent it establishes, and how it supports the prosecution's case.",
+      "keyPrinciple": "The main legal principle or ratio decidendi from this judgment",
+      "applicabilityScore": 0.95
     }
   ]
 }`;
 
-export async function findJudgments(crimeType: string, sectionIds: string[]): Promise<AIJudgmentResult[]> {
-  const userPrompt = `Crime Type: ${crimeType}\nApplicable Sections: ${sectionIds.join(', ')}\n\nFind relevant Indian court judgments for this case.`;
+export async function findJudgments(
+  crimeType: string, 
+  sectionIds: string[],
+  caseUnderstanding?: string  // NEW: Case context for better judgment matching
+): Promise<AIJudgmentResult[]> {
+  const caseContext = caseUnderstanding ? `\n\nCASE UNDERSTANDING:\n${caseUnderstanding}\n` : '';
+  const userPrompt = `Crime Type: ${crimeType}\nApplicable Sections: ${sectionIds.join(', ')}${caseContext}\n\nFind relevant Indian court judgments for this case.`;
 
   try {
     const result = await callGroq<{ judgments: Array<Record<string, unknown>> }>(
       JUDGMENT_SYSTEM_PROMPT,
       userPrompt,
-      0.3,
-      1500,
+      0.25,  // Slightly lower temperature for more accurate legal citations
+      2048,  // Increased from 1500 to accommodate detailed analysis
     );
 
     if (Array.isArray(result.judgments)) {
@@ -607,6 +703,9 @@ export async function findJudgments(crimeType: string, sectionIds: string[]): Pr
         citation: String(j.citation || ''),
         summary: String(j.summary || ''),
         relevance: String(j.relevance || ''),
+        // New fields
+        keyPrinciple: String(j.keyPrinciple || ''),
+        applicabilityScore: Math.min(1, Math.max(0, Number(j.applicabilityScore) || 0.7)),
       }));
     }
     return [];

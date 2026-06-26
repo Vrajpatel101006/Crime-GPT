@@ -15,7 +15,6 @@ import {
 import { isAIConfigured, analyzeComplaint, type AIAnalysisResult } from '../services/ai';
 import * as wf from '../services/workflow';
 import * as push from '../services/push';
-import * as encryption from '../services/crypto';
 import { reinitializeLanguage } from '../hooks/useTranslation';
 /* ── MODEL LAYER (delegated to src/models/) ── */
 import {
@@ -684,15 +683,10 @@ function hydrateCases(data: Record<string, any>): void {
       readinessScore: c.readinessScore,
       reviewStatus: c.reviewStatus,
       reviewComments: c.reviewComments,
-      _encrypted: c._encrypted || [],
     }));
 
-  // Decrypt cases in background if encryption key is available
-  if (encryption.isEncryptionKeyAvailable()) {
-    decryptAllCases();
-  } else {
-    _caseListeners.forEach(l => l());
-  }
+  // Notify listeners immediately - no decryption needed
+  _caseListeners.forEach(l => l());
 }
 
 let _caseListeners: Array<() => void> = [];
@@ -701,100 +695,6 @@ export function getCases(): CaseRecord[] { return [..._cases]; }
 
 export function getCase(id: string): CaseRecord | undefined {
   return _cases.find(c => c.id === id);
-}
-
-/* ─── ENCRYPTION HELPERS ─── */
-
-/**
- * One-time migration: Encrypts existing plaintext cases in Firebase.
- * Called once per user login if migration hasn't been completed.
- */
-async function migratePlaintextCasesToEncrypted(): Promise<void> {
-  if (!encryption.isEncryptionKeyAvailable()) return;
-
-  // Check if migration already completed (stored in localStorage)
-  const migrationKey = 'crimegpt_encryption_migration_v1';
-  if (localStorage.getItem(migrationKey)) {
-    console.log('[CrimeGPT] Encryption migration already completed.');
-    return;
-  }
-
-  console.log('[CrimeGPT] Starting encryption migration for existing cases...');
-  const updates: Record<string, unknown> = {};
-  let migratedCount = 0;
-
-  for (const c of _cases) {
-    // Skip if already encrypted
-    if (c._encrypted && c._encrypted.length > 0) continue;
-
-    try {
-      const encrypted = await encryptCaseForStorage(c);
-      if (encrypted._encrypted && encrypted._encrypted.length > 0) {
-        updates[`/cases/${c.id}`] = encrypted;
-        migratedCount++;
-      }
-    } catch (err) {
-      console.warn(`[CrimeGPT] Failed to encrypt case ${c.id}:`, err);
-    }
-  }
-
-  // Batch update Firebase
-  if (migratedCount > 0) {
-    await db.updateMultiple(updates);
-    localStorage.setItem(migrationKey, 'true');
-    console.log(`[CrimeGPT] Migration complete: ${migratedCount} cases encrypted.`);
-  } else {
-    console.log('[CrimeGPT] No plaintext cases found to migrate.');
-  }
-}
-
-/**
- * Encrypts sensitive PII fields in a case before storage.
- * Call this from UI before addCase().
- */
-export async function encryptCaseForStorage(c: CaseRecord): Promise<CaseRecord> {
-  if (!encryption.isEncryptionKeyAvailable()) {
-    // No encryption key — store as-is (fallback for migration)
-    return { ...c, _encrypted: [] };
-  }
-
-  const { encrypted, encryptedPaths } = await encryption.encryptSensitiveFields(c as unknown as Record<string, unknown>);
-  return { ...encrypted, _encrypted: encryptedPaths } as unknown as CaseRecord;
-}
-
-/**
- * Decrypts sensitive PII fields in cases after loading from Firebase.
- * Call this after login or when new cases are loaded.
- */
-export async function decryptAllCases(): Promise<void> {
-  if (!encryption.isEncryptionKeyAvailable()) return;
-
-  const decryptedCases: CaseRecord[] = [];
-  for (const c of _cases) {
-    if (c._encrypted && c._encrypted.length > 0) {
-      const decrypted = await encryption.decryptSensitiveFields(c as unknown as Record<string, unknown>, c._encrypted);
-      decryptedCases.push(decrypted as unknown as CaseRecord);
-    } else {
-      // Not encrypted — keep as-is
-      decryptedCases.push(c);
-    }
-  }
-  _cases = decryptedCases;
-  _caseListeners.forEach(l => l());
-}
-
-/* ─── ENCRYPTION STATUS ─── */
-
-export function isEncryptionActive(): boolean {
-  return encryption.isEncryptionKeyAvailable();
-}
-
-export function getEncryptionAlgorithm(): string {
-  return 'AES-256-GCM';
-}
-
-export function getKeyDerivationMethod(): string {
-  return 'PBKDF2 (100,000 iterations)';
 }
 
 export function addCase(c: CaseRecord): void {
@@ -1612,15 +1512,6 @@ export async function login(email: string, password: string, role: UserRole): Pr
     _authListeners.forEach(l => l(true));
     _roleListeners.forEach(l => l(role));
 
-    // Derive encryption key from password (PBKDF2, AES-256-GCM)
-    await encryption.deriveEncryptionKeyWithSalt(password);
-
-    // Migrate existing plaintext cases to encrypted format (one-time migration)
-    await migratePlaintextCasesToEncrypted();
-
-    // Decrypt any existing encrypted cases
-    await decryptAllCases();
-
     // PHASE 2: Load user-specific data after login (cases, evidence, documents, etc.)
     console.log('[CrimeGPT] Login successful - loading user-specific data (Phase 2)...');
     await loadUserDataAfterLogin(role);
@@ -1651,8 +1542,6 @@ export async function login(email: string, password: string, role: UserRole): Pr
 export async function logout(): Promise<void> {
   const user = getCurrentUser();
   addAuditLog('LOGOUT', _currentRole, `${user?.name || 'User'} logged out`);
-  // Clear encryption key from memory
-  encryption.clearEncryptionKey();
   clearSession();
   await firebaseLogout();
   _isAuthenticated = false;
@@ -1797,18 +1686,6 @@ export function restoreSession(): boolean {
   _currentUserId = stored.userId;
   _authListeners.forEach(l => l(true));
   _roleListeners.forEach(l => l(stored.role));
-
-  // Derive encryption key from stored password hash (requires user to re-login for full decryption)
-  // For session restore, we decrypt with the demo password (since all demo users share it)
-  encryption.deriveEncryptionKeyWithSalt('admin@123').then(() => {
-    // Run migration on restore too
-    return migratePlaintextCasesToEncrypted();
-  }).then(() => {
-    return decryptAllCases();
-  }).catch(() => {
-    // Silently fail - user will see encrypted data until they re-login
-    console.warn('[CrimeGPT] Could not derive encryption key for session restore');
-  });
 
   // Refresh lastActivity to now (user just opened the app)
   touchSession();

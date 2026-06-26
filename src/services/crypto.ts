@@ -129,11 +129,17 @@ export async function encryptField(plaintext: string): Promise<EncryptedField | 
 
 export async function decryptField(encrypted: EncryptedField): Promise<string | null> {
   if (!_encryptionKey) {
-    console.warn('[CrimeGPT] Cannot decrypt: no encryption key available');
+    console.error('[CrimeGPT] ❌ Decryption failed: No encryption key available (user not logged in)');
     return null;
   }
 
   try {
+    // Validate encrypted field structure
+    if (!encrypted.ciphertext || !encrypted.iv) {
+      console.error('[CrimeGPT] ❌ Decryption failed: Missing ciphertext or IV (corrupted data)');
+      return null;
+    }
+
     // Decode base64 to Uint8Array
     const ciphertext = Uint8Array.from(atob(encrypted.ciphertext), c => c.charCodeAt(0));
     const iv = Uint8Array.from(atob(encrypted.iv), c => c.charCodeAt(0));
@@ -147,7 +153,15 @@ export async function decryptField(encrypted: EncryptedField): Promise<string | 
 
     return new TextDecoder().decode(decrypted);
   } catch (err) {
-    console.error('[CrimeGPT] Decryption failed:', err);
+    // Provide specific error messages based on error type
+    const error = err as Error;
+    if (error.name === 'OperationError') {
+      console.error('[CrimeGPT] ❌ Decryption failed: Wrong encryption key (password mismatch or different session salt). Data cannot be decrypted.');
+    } else if (error.name === 'DataError') {
+      console.error('[CrimeGPT] ❌ Decryption failed: Invalid data format (corrupted ciphertext)');
+    } else {
+      console.error(`[CrimeGPT] ❌ Decryption failed: ${error.name} - ${error.message}`);
+    }
     return null;
   }
 }
@@ -161,9 +175,16 @@ export async function decryptField(encrypted: EncryptedField): Promise<string | 
 
 let _sessionSalt: Uint8Array | null = null;
 
-export async function deriveEncryptionKeyWithSalt(password: string): Promise<void> {
-  // Generate salt once per session
-  _sessionSalt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+export async function deriveEncryptionKeyWithSalt(password: string, storedSalt?: string): Promise<void> {
+  // Use stored salt if provided, otherwise generate new one
+  if (storedSalt) {
+    _sessionSalt = Uint8Array.from(atob(storedSalt), c => c.charCodeAt(0));
+    console.log('[CrimeGPT] 🔑 Using stored encryption salt from previous session');
+  } else {
+    // Generate salt once per session (only for new users or first login)
+    _sessionSalt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+    console.log('[CrimeGPT] 🔑 Generated new encryption salt for this session');
+  }
 
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -187,7 +208,7 @@ export async function deriveEncryptionKeyWithSalt(password: string): Promise<voi
   );
 
   _keyDerived = true;
-  console.log('[CrimeGPT] Encryption key derived with session salt');
+  console.log('[CrimeGPT] ✅ Encryption key derived successfully');
 }
 
 export function getSessionSalt(): string | null {
@@ -350,7 +371,8 @@ export async function decryptSensitiveFields(obj: NestedObject, encryptedPaths: 
           if (typeof item === 'object' && item !== null && 'ciphertext' in item) {
             // This is an EncryptedField
             const dec = await decryptField(item as EncryptedField);
-            return dec || item;
+            // If decryption fails, use placeholder instead of encrypted object
+            return dec !== null ? dec : '[🔒 Unable to decrypt]';
           }
           if (typeof item === 'object' && item !== null) {
             // Object with multiple fields
@@ -359,7 +381,8 @@ export async function decryptSensitiveFields(obj: NestedObject, encryptedPaths: 
               const fieldVal = (item as NestedObject)[key];
               if (typeof fieldVal === 'object' && fieldVal !== null && 'ciphertext' in fieldVal) {
                 const dec = await decryptField(fieldVal as EncryptedField);
-                decryptedItem[key] = dec || fieldVal;
+                // If decryption fails, use placeholder instead of encrypted object
+                decryptedItem[key] = dec !== null ? dec : '[🔒 Unable to decrypt]';
               } else {
                 decryptedItem[key] = fieldVal;
               }
@@ -378,6 +401,9 @@ export async function decryptSensitiveFields(obj: NestedObject, encryptedPaths: 
       const dec = await decryptField(value as EncryptedField);
       if (dec !== null) {
         setNestedValue(decrypted, path, dec);
+      } else {
+        // Decryption failed - set safe placeholder to prevent React crash
+        setNestedValue(decrypted, path, '[🔒 Unable to decrypt]');
       }
     }
   }
