@@ -7,7 +7,7 @@ import {
   getPermissions, setPermissions, subscribePermissions,
   getSettings, updateSettings, subscribeSettings,
   getAccessRequests, approveAccessRequest, rejectAccessRequest, subscribeAccessRequests,
-  getCases, formatDate, getEncryptionAlgorithm, getKeyDerivationMethod,
+  getCases, formatDate
 } from '../store';
 import type { UserRole } from '../types';
 import type { PermKey, SystemSettings } from '../store';
@@ -603,36 +603,36 @@ function SettingsTab() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-        {/* Encryption Status (Read-Only) */}
+        {/* Security Status (Read-Only) */}
         <div className="card" style={{ borderLeft: '4px solid var(--govt-gold)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <ShieldCheck size={18} style={{ color: 'var(--govt-gold)' }} />
-            <h4 style={{ margin: 0 }}>Encryption Status</h4>
+            <h4 style={{ margin: 0 }}>Security Status</h4>
             <span className="badge badge-success" style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>Active</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Algorithm</span>
-              <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{getEncryptionAlgorithm()}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Authentication</span>
+              <span style={{ fontWeight: 600 }}>Firebase Auth</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Key Derivation</span>
-              <span style={{ fontWeight: 600 }}>{getKeyDerivationMethod()}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Access Control</span>
+              <span style={{ fontWeight: 600 }}>Role-Based (RBAC)</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Encryption Mode</span>
-              <span style={{ fontWeight: 600 }}>AES-256-GCM (Authenticated)</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Data Isolation</span>
+              <span style={{ fontWeight: 600 }}>Station-Based</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Key Storage</span>
-              <span style={{ fontWeight: 600, color: 'var(--govt-gold)' }}>In-Memory Only</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Audit Logging</span>
+              <span style={{ fontWeight: 600, color: 'var(--govt-gold)' }}>Enabled</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Encrypted Fields</span>
-              <span style={{ fontWeight: 600 }}>name, mobile, address, aadhaar</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Session Timeout</span>
+              <span style={{ fontWeight: 600 }}>30 Minutes</span>
             </div>
             <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              🔒 All sensitive PII is encrypted client-side before reaching Firebase. Decryption occurs only for authorized users with valid credentials.
+              🔒 All data protected by Firebase Security Rules, role-based permissions, and station-level access control.
             </div>
           </div>
         </div>
