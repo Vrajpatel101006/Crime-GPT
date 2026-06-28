@@ -7,7 +7,7 @@ import { getLegalSections, getJudgments, simulateLegalAnalysis, showToast } from
 import { useTranslation } from '../hooks/useTranslation';
 import { getLegalSectionTranslations, getJudgmentTranslations } from './documents/docTranslations';
 import type { LegalSection, LegalSuggestion, Judgment } from '../types';
-import type { LegalSectionTranslations, JudgmentTranslations } from './documents/docTranslations';
+import type { LegalSectionTranslations } from './documents/docTranslations';
 
 export default function LegalIntel() {
   const { t, language } = useTranslation();

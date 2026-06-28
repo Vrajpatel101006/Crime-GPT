@@ -113,7 +113,7 @@ function generateFIR(
   today: string,
   sectionsShort: string,
   t: DocFieldTranslations,
-  language: 'en' | 'gu' | 'hi' = 'en',
+  _language: 'en' | 'gu' | 'hi' = 'en',
   _legalT?: LegalSectionTranslations
 ): string {
   return `
@@ -467,7 +467,7 @@ function generateChargesheet(
 function generatePurvaniChargesheet(
   caseData: CaseRecord,
   today: string,
-  sections: string,
+  _sections: string,
   sectionsShort: string,
   t: DocFieldTranslations,
   _language: 'en' | 'gu' | 'hi' = 'en'
@@ -924,7 +924,7 @@ function generateCourtCustody(
 function generatePanchanama(
   caseData: CaseRecord,
   today: string,
-  t: DocFieldTranslations,
+  _t: DocFieldTranslations,
   _language: 'en' | 'gu' | 'hi' = 'en'
 ): string {
   return `
@@ -1104,7 +1104,7 @@ function generatePanchanama(
 function generateFaceIDForm(
   caseData: CaseRecord,
   today: string,
-  t: DocFieldTranslations,
+  _t: DocFieldTranslations,
   _language: 'en' | 'gu' | 'hi' = 'en'
 ): string {
   return `
@@ -1294,7 +1294,7 @@ function generateLERSRequest(
   caseData: CaseRecord,
   today: string,
   sectionsShort: string,
-  t: DocFieldTranslations,
+  _t: DocFieldTranslations,
   _language: 'en' | 'gu' | 'hi' = 'en'
 ): string {
   return `
