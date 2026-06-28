@@ -5,6 +5,7 @@ import {
   Upload, Shield, Gavel, Eye
 } from 'lucide-react';
 import { getAccessibleCases, formatDateTime } from '../store';
+import { useTranslation } from '../hooks/useTranslation';
 import type { DiaryEntry } from '../types';
 
 const CATEGORY_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
@@ -19,6 +20,7 @@ const CATEGORY_CONFIG: Record<string, { icon: any; color: string; bg: string }> 
 };
 
 export default function CaseDiary() {
+  const { t } = useTranslation();
   const cases = getAccessibleCases();
   const [selectedCase, setSelectedCase] = useState(cases[0]?.id || '');
   const [search, setSearch] = useState('');
@@ -42,39 +44,39 @@ export default function CaseDiary() {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><BookOpen size={28} style={{ color: 'var(--brand-primary-light)' }} /> Case Diary</h1>
-          <p className="text-sm text-muted" style={{ marginTop: 4 }}>Chronological investigation timeline and activity log</p>
+          <h1><BookOpen size={28} style={{ color: 'var(--brand-primary-light)' }} /> {t('diary.title')}</h1>
+          <p className="text-sm text-muted" style={{ marginTop: 4 }}>{t('diary.pageDescription')}</p>
         </div>
       </div>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)', flexWrap: 'wrap' }}>
         <div className="form-group" style={{ minWidth: 220 }}>
-          <label className="form-label">Case</label>
+          <label className="form-label">{t('diary.caseLabel')}</label>
           <select className="form-select" value={selectedCase} onChange={e => setSelectedCase(e.target.value)}>
-            <option value="all">All Cases</option>
+            <option value="all">{t('dashboard.allCases')}</option>
             {cases.map(c => <option key={c.id} value={c.id}>{c.firNumber} — {c.crimeType}</option>)}
           </select>
         </div>
         <div className="form-group" style={{ minWidth: 180 }}>
-          <label className="form-label">Category</label>
+          <label className="form-label">{t('diary.categoryLabel')}</label>
           <select className="form-select" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-            <option value="all">All Categories</option>
-            <option value="complaint">Complaint</option>
-            <option value="evidence">Evidence</option>
-            <option value="witness">Witness</option>
-            <option value="arrest">Arrest</option>
-            <option value="legal">Legal</option>
-            <option value="document">Document</option>
-            <option value="review">Review</option>
-            <option value="other">Other</option>
+            <option value="all">{t('diary.allCategories')}</option>
+            <option value="complaint">{t('diary.complaint')}</option>
+            <option value="evidence">{t('diary.evidence')}</option>
+            <option value="witness">{t('diary.witness')}</option>
+            <option value="arrest">{t('diary.arrest')}</option>
+            <option value="legal">{t('diary.legal')}</option>
+            <option value="document">{t('diary.document')}</option>
+            <option value="review">{t('diary.review')}</option>
+            <option value="other">{t('diary.other')}</option>
           </select>
         </div>
         <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
-          <label className="form-label">Search</label>
+          <label className="form-label">{t('diary.searchLabel')}</label>
           <div className="search-box" style={{ maxWidth: '100%' }}>
             <Search className="search-icon" size={16} />
-            <input placeholder="Search diary entries..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input placeholder={t('diary.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
           </div>
         </div>
       </div>
@@ -85,21 +87,21 @@ export default function CaseDiary() {
           <div className="stat-icon primary"><BookOpen size={20} /></div>
           <div className="stat-info">
             <div className="stat-value">{filtered.length}</div>
-            <div className="stat-label">Total Entries</div>
+            <div className="stat-label">{t('diary.totalEntries')}</div>
           </div>
         </div>
         <div className="stat-card success">
           <div className="stat-icon success"><Upload size={20} /></div>
           <div className="stat-info">
             <div className="stat-value">{filtered.filter(e => e.category === 'evidence').length}</div>
-            <div className="stat-label">Evidence Actions</div>
+            <div className="stat-label">{t('diary.evidenceActions')}</div>
           </div>
         </div>
         <div className="stat-card warning">
           <div className="stat-icon warning"><Gavel size={20} /></div>
           <div className="stat-info">
             <div className="stat-value">{filtered.filter(e => e.category === 'legal').length}</div>
-            <div className="stat-label">Legal Actions</div>
+            <div className="stat-label">{t('diary.legalActions')}</div>
           </div>
         </div>
         <div className="stat-card info">

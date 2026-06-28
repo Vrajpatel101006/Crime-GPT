@@ -1,16 +1,19 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   FileText, Plus, Download, Eye, X, CheckCircle2,
   AlertCircle, Loader2, FileCheck, Printer
 } from 'lucide-react';
 import {
   getAccessibleCases, getDocumentsForCase, addDocument, generateUniqueId,
-  formatDateTime, showToast, getCurrentUser, addDiaryEntry
+  formatDateTime, showToast, getCurrentUser, addDiaryEntry, getUserPreferences,
+  subscribeUserPreferences,
 } from '../store';
+import { useTranslation } from '../hooks/useTranslation';
 import type { CaseRecord, DocumentType, GeneratedDocument } from '../types';
 import { DOC_TYPES, generateDocContent } from './documents/index';
 
 export default function Documents() {
+  const { t } = useTranslation();
   const cases = getAccessibleCases();
   const [selectedCase, setSelectedCase] = useState(cases[0]?.id || '');
   const [showGenerate, setShowGenerate] = useState(false);
@@ -21,28 +24,38 @@ export default function Documents() {
   const currentCase = cases.find(c => c.id === selectedCase);
   const docs = selectedCase ? getDocumentsForCase(selectedCase) : [];
 
-  const refresh = () => setTick(t => t + 1);
+  const refresh = () => setTick(prev => prev + 1);
 
   return (
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><FileText size={28} style={{ color: 'var(--brand-primary-light)' }} /> Document Generator</h1>
-          <p className="text-sm text-muted" style={{ marginTop: 4 }}>Generate court-ready legal documents from case data</p>
+          <h1><FileText size={28} style={{ color: 'var(--brand-primary-light)' }} /> {t('document.title')}</h1>
+          <p className="text-sm text-muted" style={{ marginTop: 4 }}>{t('document.description')}</p>
         </div>
         <div className="page-header-actions">
           <select className="form-select" style={{ width: 280 }} value={selectedCase} onChange={e => setSelectedCase(e.target.value)}>
             {cases.map(c => <option key={c.id} value={c.id}>{c.firNumber} — {c.crimeType}</option>)}
           </select>
-          <button className="btn btn-primary" onClick={() => { setDefaultDocType('fir'); setShowGenerate(true); }}>
-            <Plus size={16} /> Generate Document
+          <button 
+            className="btn btn-primary" 
+            onClick={() => {
+              if (!currentCase) {
+                showToast('Please select a case first', 'warning');
+                return;
+              }
+              setDefaultDocType('fir'); 
+              setShowGenerate(true);
+            }}
+          >
+            <Plus size={16} /> {t('document.generate')}
           </button>
         </div>
       </div>
 
       {/* Document Type Grid */}
       <div className="section-header">
-        <div className="section-title">Available Document Templates</div>
+        <div className="section-title">{t('document.availableTemplates')}</div>
       </div>
       <div className="grid-4 stagger" style={{ marginBottom: 'var(--space-xl)' }}>
         {DOC_TYPES.map(dt => (
@@ -50,7 +63,14 @@ export default function Documents() {
             key={dt.value}
             className="card fade-in-up"
             style={{ cursor: 'pointer', textAlign: 'center' }}
-            onClick={() => { setDefaultDocType(dt.value); setShowGenerate(true); }}
+            onClick={() => {
+              if (!currentCase) {
+                showToast('Please select a case first', 'warning');
+                return;
+              }
+              setDefaultDocType(dt.value); 
+              setShowGenerate(true);
+            }}
           >
             <div style={{
               width: 44, height: 44, borderRadius: 'var(--radius-md)',
@@ -68,8 +88,8 @@ export default function Documents() {
 
       {/* Generated Documents */}
       <div className="section-header">
-        <div className="section-title">Generated Documents for {currentCase?.firNumber || 'Selected Case'}</div>
-        <span className="badge badge-primary">{docs.length} documents</span>
+        <div className="section-title">{t('document.generatedFor')} {currentCase?.firNumber || t('document.selectCase')}</div>
+        <span className="badge badge-primary">{docs.length} {t('document.title').toLowerCase()}</span>
       </div>
 
       {docs.length > 0 ? (
@@ -97,7 +117,7 @@ export default function Documents() {
                   {doc.status}
                 </span>
                 <button className="btn btn-ghost btn-sm" onClick={() => setPreviewDoc(doc)}>
-                  <Eye size={14} /> Preview
+                  <Eye size={14} /> {t('action.preview')}
                 </button>
               </div>
             </div>
@@ -106,36 +126,46 @@ export default function Documents() {
       ) : (
         <div className="empty-state">
           <FileText className="empty-state-icon" />
-          <h3>No documents generated yet</h3>
-          <p>Select a case and generate your first court-ready document.</p>
+          <h3>{t('document.noDocuments')}</h3>
+          <p>{t('document.selectCaseFirst')}.</p>
         </div>
       )}
 
       {/* Generate Modal */}
       {showGenerate && currentCase && (
-        <GenerateModal caseData={currentCase} defaultDocType={defaultDocType} onClose={() => { setShowGenerate(false); refresh(); }} />
+        <GenerateModal caseData={currentCase} defaultDocType={defaultDocType} onClose={() => { setShowGenerate(false); refresh(); }} t={t} />
       )}
 
       {/* Preview Modal */}
-      {previewDoc && <PreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
+      {previewDoc && <PreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} t={t} />}
     </div>
   );
 }
 
-function GenerateModal({ caseData, defaultDocType, onClose }: { caseData: CaseRecord; defaultDocType: DocumentType; onClose: () => void }) {
+function GenerateModal({ caseData, defaultDocType, onClose, t }: { caseData: CaseRecord; defaultDocType: DocumentType; onClose: () => void; t: (key: string, params?: Record<string, string | number>) => string }) {
   const user = getCurrentUser();
   const [docType, setDocType] = useState<DocumentType>(defaultDocType);
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'gu' | 'hi'>(
+    getUserPreferences().documentLanguage
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState<{ content: string; errors: string[] } | null>(null);
+
+  // Subscribe to preference changes (e.g., when user changes language in Settings)
+  useEffect(() => {
+    return subscribeUserPreferences(() => {
+      setSelectedLanguage(getUserPreferences().documentLanguage);
+    });
+  }, []);
 
   const handleGenerate = useCallback(() => {
     setIsGenerating(true);
     setTimeout(() => {
-      const result = generateDocContent(caseData, docType);
+      const result = generateDocContent(caseData, docType, selectedLanguage);
       setGenerated(result);
       setIsGenerating(false);
     }, 1200);
-  }, [caseData, docType]);
+  }, [caseData, docType, selectedLanguage]);
 
   const handleSave = useCallback(() => {
     if (!generated) return;
@@ -171,7 +201,7 @@ function GenerateModal({ caseData, defaultDocType, onClose }: { caseData: CaseRe
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FileText size={20} style={{ color: 'var(--brand-primary-light)' }} /> Generate Document
+            <FileText size={20} style={{ color: 'var(--brand-primary-light)' }} /> {t('document.generate')}
           </h3>
           <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
@@ -179,12 +209,28 @@ function GenerateModal({ caseData, defaultDocType, onClose }: { caseData: CaseRe
           {!generated ? (
             <div className="fade-in">
               <div className="form-group" style={{ marginBottom: 'var(--space-lg)' }}>
-                <label className="form-label">Document Type</label>
+                <label className="form-label">{t('document.type')}</label>
                 <select className="form-select" value={docType} onChange={e => setDocType(e.target.value as DocumentType)}>
                   {DOC_TYPES.map(dt => (
                     <option key={dt.value} value={dt.value}>{dt.label}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 'var(--space-lg)' }}>
+                <label className="form-label">{t('documents.generateLanguage')}</label>
+                <select
+                  className="form-select"
+                  value={selectedLanguage}
+                  onChange={e => setSelectedLanguage(e.target.value as 'en' | 'gu' | 'hi')}
+                >
+                  <option value="en">English</option>
+                  <option value="gu">ગુજરાતી (Gujarati)</option>
+                  <option value="hi">हिंदी (Hindi)</option>
+                </select>
+                <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                  {t('documents.languageSelectorDescription')}
+                </small>
               </div>
 
               <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
@@ -217,13 +263,13 @@ function GenerateModal({ caseData, defaultDocType, onClose }: { caseData: CaseRe
         <div className="modal-footer">
           {!generated ? (
             <button className="btn btn-primary" onClick={handleGenerate} disabled={isGenerating}>
-              {isGenerating ? <><Loader2 size={16} className="spin" /> Generating...</> : <><FileText size={16} /> Generate Document</>}
+              {isGenerating ? <><Loader2 size={16} className="spin" /> {t('legal.analyzing')}...</> : <><FileText size={16} /> {t('document.generate')}</>}
             </button>
           ) : (
             <>
-              <button className="btn btn-secondary" onClick={() => setGenerated(null)}>Back</button>
+              <button className="btn btn-secondary" onClick={() => setGenerated(null)}>{t('action.back')}</button>
               <button className="btn btn-success" onClick={handleSave}>
-                <CheckCircle2 size={16} /> Save Document
+                <CheckCircle2 size={16} /> {t('action.save')}
               </button>
             </>
           )}
@@ -233,7 +279,7 @@ function GenerateModal({ caseData, defaultDocType, onClose }: { caseData: CaseRe
   );
 }
 
-function PreviewModal({ doc, onClose }: { doc: GeneratedDocument; onClose: () => void }) {
+function PreviewModal({ doc, onClose }: { doc: GeneratedDocument; onClose: () => void; t: (key: string, params?: Record<string, string | number>) => string }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>

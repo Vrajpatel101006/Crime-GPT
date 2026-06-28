@@ -79,15 +79,26 @@ export default function Settings() {
     }
   }, []);
 
+  /* ── Update preference helper ── */
+  const updatePref = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
+    setPrefs(prev => ({ ...prev, [key]: value }));
+  };
+
+  /* ── Document language change (immediate save) ── */
+  const handleDocumentLanguage = useCallback((code: string) => {
+    const lang = code as 'en' | 'hi' | 'gu';
+    updatePref('documentLanguage', lang);
+    // Auto-save immediately (no need to click Save button)
+    updateUserPreferences({ documentLanguage: lang });
+    showToast(t('settings.languageChangedSuccess'), 'success');
+  }, [updatePref]);
+
   /* ── Save other preferences ── */
   const handleSave = useCallback(() => {
     updateUserPreferences(prefs);
     showToast(t('settings.preferencesSaved'), 'success');
   }, [prefs]);
 
-  const updatePref = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
-    setPrefs(prev => ({ ...prev, [key]: value }));
-  };
 
   const pushPerm = pushSupported ? getNotificationPermission() : 'denied';
 
@@ -189,7 +200,7 @@ export default function Settings() {
             <select
               className="form-select"
               value={prefs.documentLanguage}
-              onChange={e => updatePref('documentLanguage', e.target.value as 'en' | 'hi' | 'gu')}
+              onChange={e => handleDocumentLanguage(e.target.value)}
             >
               {languages.map(l => (
                 <option key={l.code} value={l.code}>
