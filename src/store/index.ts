@@ -7,7 +7,7 @@
    ============================================ */
 
 import { type User, type CaseRecord, type Evidence, type AuditLog, type Notification, type Toast, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest, type WorkflowEvent } from '../types';
-import { firebaseLogin, firebaseLogout, firebaseCreateUser, ensureDemoAuthUsers, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
+import { firebaseLogin, firebaseLogout, firebaseCreateUser, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
 import * as db from '../services/db';
 import {
   SEED_USERS, SEED_ROLES, SEED_SETTINGS,

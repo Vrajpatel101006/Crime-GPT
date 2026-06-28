@@ -72,7 +72,7 @@ export function verifyDemoCredentials(email: string, password: string, role: Use
   // Mark demo users as created (won't run again)
   localStorage.setItem('crimegpt_demo_users_created', 'true');
   console.log('[CrimeGPT] Demo users setup complete');
-}
+
 
 /* ─── LOGIN ─── */
 export async function firebaseLogin(email: string, password: string): Promise<{ success: boolean; uid?: string; error?: string }> {
