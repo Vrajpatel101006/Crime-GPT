@@ -61,7 +61,6 @@ export async function initializeStore(): Promise<void> {
   try {
     // Ensure Firebase Auth demo users exist (for login)
     console.log('[CrimeGPT] Step 1: Ensuring demo auth users...');
-    await ensureDemoAuthUsers();
     console.log('[CrimeGPT] Step 1 complete');
 
     // PHASE 1: Read only public data needed before login
@@ -149,6 +148,9 @@ export async function loadUserDataAfterLogin(role: UserRole): Promise<void> {
 
     // Merge diary entries into cases
     mergeDiaryEntriesIntoCases(cases, allDiaryEntries);
+
+    // Migrate old encrypted cases to plain text (one-time cleanup)
+    await migrateEncryptedCasesToPlaintext(cases);
 
     // Hydrate user-specific data
     hydrateCases(cases);
@@ -658,38 +660,158 @@ function mergeDiaryEntriesIntoCases(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateCases(data: Record<string, any>): void {
   const valid = validateBatch('case', data, SCHEMAS.case);
-  _cases = valid
-    .filter((c: any) => !c.deleted)  // Filter out soft-deleted cases
-    .map((c: any) => ({
-      id: c.id,
-      firNumber: c.firNumber,
-      caseNumber: c.caseNumber,
-      policeStation: c.policeStation,
-      assignedOfficer: c.assignedOfficer,
-      assignedStation: c.assignedStation || c.policeStation,
-      classification: c.classification,
-      clearanceRequired: c.clearanceRequired,
-      status: c.status,
-      crimeType: c.crimeType,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      victim: c.victim,
-      accused: c.accused,
-      incident: c.incident,
-      evidenceIds: c.evidenceIds,
-      legalSectionIds: c.legalSectionIds,
-      documentIds: c.documentIds,
-      diaryEntries: c.diaryEntries,
-      readinessScore: c.readinessScore,
-      reviewStatus: c.reviewStatus,
-      reviewComments: c.reviewComments,
-    }));
+  
+  // Clean any encrypted fields before hydration
+  const cleanedCases = valid.map((c: any) => {
+    const cleaned = { ...c };
+    
+    // Helper to clean encrypted field objects
+    const cleanField = (obj: any): any => {
+      if (!obj || typeof obj !== 'object') return obj;
+      if ('ciphertext' in obj && 'iv' in obj) {
+        return '[Encrypted Data - Cleared]';
+      }
+      if (Array.isArray(obj)) {
+        return obj.map(item => cleanField(item));
+      }
+      const result: any = {};
+      for (const key of Object.keys(obj)) {
+        result[key] = cleanField(obj[key]);
+      }
+      return result;
+    };
+    
+    // Clean victim, accused, witnesses
+    if (cleaned.victim) cleaned.victim = cleanField(cleaned.victim);
+    if (cleaned.accused) cleaned.accused = cleanField(cleaned.accused);
+    if (cleaned.witnesses) cleaned.witnesses = cleanField(cleaned.witnesses);
+    
+    // Remove _encrypted field
+    delete cleaned._encrypted;
+    
+    return cleaned;
+  })
+  .filter((c: any) => !c.deleted);  // Filter out soft-deleted cases
+  
+  _cases = cleanedCases.map((c: any) => ({
+    id: c.id,
+    firNumber: c.firNumber,
+    caseNumber: c.caseNumber,
+    policeStation: c.policeStation,
+    assignedOfficer: c.assignedOfficer,
+    assignedStation: c.assignedStation || c.policeStation,
+    classification: c.classification,
+    clearanceRequired: c.clearanceRequired,
+    status: c.status,
+    crimeType: c.crimeType,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    victim: c.victim,
+    accused: c.accused,
+    incident: c.incident,
+    evidenceIds: c.evidenceIds,
+    legalSectionIds: c.legalSectionIds,
+    documentIds: c.documentIds,
+    diaryEntries: c.diaryEntries,
+    readinessScore: c.readinessScore,
+    reviewStatus: c.reviewStatus,
+    reviewComments: c.reviewComments,
+  }));
 
   // Notify listeners immediately - no decryption needed
   _caseListeners.forEach(l => l());
 }
 
 let _caseListeners: Array<() => void> = [];
+
+/* ─── MIGRATION: Clean up old encrypted cases ─── */
+
+/**
+ * One-time migration: Removes encrypted field objects from old cases in Firebase.
+ * Replaces { ciphertext, iv, salt } with placeholder text since we can't decrypt them anymore.
+ */
+async function migrateEncryptedCasesToPlaintext(cases: Record<string, any>): Promise<void> {
+  // Check if migration already completed
+  const migrationKey = 'crimegpt_remove_encryption_migration_v1';
+  if (localStorage.getItem(migrationKey)) {
+    return; // Already migrated
+  }
+
+  console.log('[CrimeGPT] Checking for old encrypted cases to clean up...');
+  const updates: Record<string, unknown> = {};
+  let migratedCount = 0;
+
+  for (const [caseId, c] of Object.entries(cases)) {
+    if (!c || typeof c !== 'object') continue;
+
+    let needsUpdate = false;
+    const cleanedCase = { ...c };
+
+    // Helper function to check and clean encrypted fields
+    const cleanEncryptedField = (obj: any, path: string): any => {
+      if (!obj || typeof obj !== 'object') return obj;
+      
+      // Check if this is an encrypted field object
+      if ('ciphertext' in obj && 'iv' in obj) {
+        console.log(`[CrimeGPT] Cleaning encrypted field: ${path}`);
+        needsUpdate = true;
+        return '[Encrypted Data - Migration Cleared]';
+      }
+      
+      // Recursively clean nested objects
+      if (Array.isArray(obj)) {
+        return obj.map((item, idx) => cleanEncryptedField(item, `${path}[${idx}]`));
+      }
+      
+      const cleaned: any = {};
+      for (const key of Object.keys(obj)) {
+        cleaned[key] = cleanEncryptedField(obj[key], `${path}.${key}`);
+      }
+      return cleaned;
+    };
+
+    // Clean victim and accused fields
+    if (cleanedCase.victim) {
+      cleanedCase.victim = cleanEncryptedField(cleanedCase.victim, `${caseId}.victim`);
+    }
+    if (cleanedCase.accused) {
+      cleanedCase.accused = cleanEncryptedField(cleanedCase.accused, `${caseId}.accused`);
+    }
+    if (cleanedCase.witnesses) {
+      cleanedCase.witnesses = cleanEncryptedField(cleanedCase.witnesses, `${caseId}.witnesses`);
+    }
+
+    // Remove _encrypted field
+    if (cleanedCase._encrypted) {
+      delete cleanedCase._encrypted;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      // Update the local cases object (so React can render it immediately)
+      cases[caseId] = cleanedCase;
+      
+      // Also queue Firebase update
+      updates[`/cases/${caseId}`] = cleanedCase;
+      migratedCount++;
+    }
+  }
+
+  // Update Firebase with cleaned cases
+  if (migratedCount > 0) {
+    console.log(`[CrimeGPT] Migrating ${migratedCount} encrypted cases to plain text...`);
+    try {
+      await db.updateMultiple(updates);
+      localStorage.setItem(migrationKey, 'true');
+      console.log(`[CrimeGPT] ✅ Migration complete: ${migratedCount} cases cleaned up`);
+    } catch (err) {
+      console.error('[CrimeGPT] ❌ Migration failed:', err);
+    }
+  } else {
+    console.log('[CrimeGPT] No encrypted cases found to migrate');
+    localStorage.setItem(migrationKey, 'true');
+  }
+}
 
 export function getCases(): CaseRecord[] { return [..._cases]; }
 

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Mail, Lock, ShieldCheck, LogIn, Loader2, Eye, EyeOff, ChevronDown, AlertCircle, Info, Fingerprint } from 'lucide-react';
-import { login, showToast, getEncryptionAlgorithm } from '../store';
+import { login, showToast } from '../store';
 import { DEMO_CREDENTIALS } from '../services/auth';
 import type { UserRole } from '../types';
 
@@ -313,7 +313,7 @@ export default function Login({ onLogin, initialRole }: LoginProps) {
             )}
           </div>
 
-          {/* Encryption Status Badge */}
+          {/* Security Status Badge */}
           <div style={{
             marginTop: 32, paddingTop: 16, borderTop: '1px solid var(--border-subtle)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -321,7 +321,7 @@ export default function Login({ onLogin, initialRole }: LoginProps) {
           }}>
             <ShieldCheck size={12} color="var(--govt-gold)" />
             <span style={{ fontSize: '0.7rem', color: 'var(--govt-gold)', letterSpacing: '0.05em' }}>
-              End-to-End Encryption Active • {getEncryptionAlgorithm()}
+              Secure Authentication • Role-Based Access Control
             </span>
           </div>
 
