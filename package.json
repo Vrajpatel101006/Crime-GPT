@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "vite preview --port 3000"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "firebase": "^12.14.0",
     "lucide-react": "^1.17.0",
     "react": "^19.2.6",

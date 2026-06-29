@@ -313,6 +313,18 @@ export default function Login({ onLogin, initialRole }: LoginProps) {
             )}
           </div>
 
+          {/* Security Status Badge */}
+          <div style={{
+            marginTop: 32, paddingTop: 16, borderTop: '1px solid var(--border-subtle)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            opacity: 0.7,
+          }}>
+            <ShieldCheck size={12} color="var(--govt-gold)" />
+            <span style={{ fontSize: '0.7rem', color: 'var(--govt-gold)', letterSpacing: '0.05em' }}>
+              Secure Authentication • Role-Based Access Control
+            </span>
+          </div>
+
         </div>
       </div>
     </div>

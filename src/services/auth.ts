@@ -47,19 +47,32 @@ export function verifyDemoCredentials(email: string, password: string, role: Use
 }
 
 /* ─── ENSURE DEMO USERS EXIST IN FIREBASE AUTH ─── */
-export async function ensureDemoAuthUsers(): Promise<void> {
+// export async function ensureDemoAuthUsers(): Promise<void> {
+//   // Check if demo users have already been created (one-time setup)
+//   if (localStorage.getItem('crimegpt_demo_users_created')) {
+//     return; // Already created on a previous run
+//   }
+
+  console.log('[CrimeGPT] First-time setup: Creating demo auth users...');
+  
   for (const role of Object.keys(ROLE_TO_EMAIL) as UserRole[]) {
     const email = getEmailFromRole(role);
     const password = DEMO_PASSWORDS[role];
-    const result = await firebaseCreateUser(email, password);
-    if (result.success) {
-      await firebaseLogout();
-      continue;
+    try {
+      const result = await firebaseCreateUser(email, password);
+      if (result.success) {
+        await firebaseLogout();
+      }
+      // Silently ignore "email-already-in-use" errors - users already exist
+    } catch {
+      // Ignore errors - users will be created on demand or already exist
     }
-    if (result.code === 'auth/email-already-in-use') continue;
-    console.warn(`[CrimeGPT] Could not create auth user ${email}:`, result.error);
   }
-}
+
+  // Mark demo users as created (won't run again)
+  localStorage.setItem('crimegpt_demo_users_created', 'true');
+  console.log('[CrimeGPT] Demo users setup complete');
+
 
 /* ─── LOGIN ─── */
 export async function firebaseLogin(email: string, password: string): Promise<{ success: boolean; uid?: string; error?: string }> {

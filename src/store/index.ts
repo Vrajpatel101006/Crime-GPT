@@ -1,4 +1,4 @@
-/* ============================================
+﻿/* ============================================
    CRIMEGPT 2.0 — FIREBASE-BACKED STORE
    ============================================
    All data persists to Firebase Realtime DB.
@@ -6,18 +6,38 @@
    Real-time listeners sync across devices.
    ============================================ */
 
-import { type User, type CaseRecord, type Evidence, type LegalSection, type Judgment, type AuditLog, type Notification, type Toast, type LegalSuggestion, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest, type WorkflowEvent } from '../types';
-import { firebaseLogin, firebaseLogout, firebaseCreateUser, ensureDemoAuthUsers, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
+import { type User, type CaseRecord, type Evidence, type AuditLog, type Notification, type Toast, type GeneratedDocument, type UserRole, type DiaryEntry, type PoliceRank, type ClearanceLevel, type AccessRequest, type WorkflowEvent } from '../types';
+import { firebaseLogin, firebaseLogout, firebaseCreateUser, verifyDemoCredentials, getEmailFromRole } from '../services/auth';
 import * as db from '../services/db';
 import {
-  SEED_LEGAL_SECTIONS, SEED_JUDGMENTS, SEED_USERS, SEED_ROLES,
-  SEED_SETTINGS, SEED_CASES, SEED_EVIDENCE, SEED_DOCUMENTS,
-  SEED_DIARY_ENTRIES, SEED_AUDIT_LOGS, SEED_NOTIFICATIONS,
-  SEED_WORKFLOW_EVENTS,
+  SEED_USERS, SEED_ROLES, SEED_SETTINGS,
 } from '../data/seed';
-import { isAIConfigured, analyzeComplaint, suggestLegalSections, findJudgments, type AIAnalysisResult } from '../services/ai';
+import { isAIConfigured, analyzeComplaint, type AIAnalysisResult } from '../services/ai';
 import * as wf from '../services/workflow';
 import * as push from '../services/push';
+import { reinitializeLanguage } from '../hooks/useTranslation';
+/* ── MODEL LAYER (delegated to src/models/) ── */
+import {
+  type HydrationError,
+  getHydrationErrors as _getHydrationErrors,
+  validateBatch, SCHEMAS,
+} from '../models/validation';
+import {
+  type SystemSettings, type UserPreferences,
+  hydrateSettings as _hydrateSettings,
+  getSettings as _getSettings, updateSettingsRaw,
+  subscribeSettings as _subscribeSettings,
+  getUserPrefsForUser, updateUserPrefsForUser,
+  subscribeUserPreferences as _subscribeUserPreferences,
+} from '../models/settingsModel';
+import {
+  hydrateLegalSections as _hydrateLegalSections,
+  getLegalSections as _getLegalSections,
+  hydrateJudgments as _hydrateJudgments,
+  getJudgments as _getJudgments,
+  simulateLegalAnalysis as _simulateLegalAnalysis,
+} from '../models/legalModel';
+export type { SystemSettings, UserPreferences } from '../models/settingsModel';
 
 export type { Toast } from '../types';
 export type { WorkflowEvent, NotificationPriority, NotificationAction, NotificationCategory, WorkflowEventType } from '../types';
@@ -35,116 +55,127 @@ export function subscribeInitialized(listener: () => void): () => void {
 /* ════════════════════════════════════════════
    MAIN INIT — Called once from App.tsx
    ════════════════════════════════════════════ */
-function hydrateFromLocalSeed(): void {
-  hydrateUsers(Object.fromEntries(SEED_USERS.map(u => [u.id, u])));
-  hydrateUserStates();
-  hydrateRoles(SEED_ROLES);
-  hydrateLegalSections(Object.fromEntries(SEED_LEGAL_SECTIONS.map(s => [s.id, s])));
-  hydrateJudgments(Object.fromEntries(SEED_JUDGMENTS.map(j => [j.id, j])));
-  const casesWithDiary = SEED_CASES.map(c => ({
-    ...c,
-    diaryEntries: SEED_DIARY_ENTRIES[c.id] || [],
-  }));
-  hydrateCases(Object.fromEntries(casesWithDiary.map(c => [c.id, c])));
-  hydrateEvidence(Object.fromEntries(SEED_EVIDENCE.map(e => [e.id, e])));
-  hydrateDocuments(Object.fromEntries(SEED_DOCUMENTS.map(d => [d.id, d])));
-  hydrateAuditLogs(Object.fromEntries(SEED_AUDIT_LOGS.map(l => [l.id, l])));
-  hydrateSettings(SEED_SETTINGS);
-  _notifications = [...SEED_NOTIFICATIONS];
-  _workflowEvents = [...SEED_WORKFLOW_EVENTS];
-}
 
 export async function initializeStore(): Promise<void> {
+  console.log('[CrimeGPT] initializeStore() called');
   try {
-    await ensureDemoAuthUsers();
+    // Ensure Firebase Auth demo users exist (for login)
+    console.log('[CrimeGPT] Step 1: Ensuring demo auth users...');
+    console.log('[CrimeGPT] Step 1 complete');
 
-    const seeded = await db.isSeeded();
-    if (!seeded) {
-      console.log('[CrimeGPT] First load — seeding Firebase...');
-      await db.seedAll({
-        users: SEED_USERS,
-        roles: SEED_ROLES,
-        legalSections: SEED_LEGAL_SECTIONS,
-        judgments: SEED_JUDGMENTS,
-        cases: SEED_CASES,
-        evidence: SEED_EVIDENCE,
-        documents: SEED_DOCUMENTS,
-        diaryEntries: SEED_DIARY_ENTRIES,
-        auditLogs: SEED_AUDIT_LOGS,
-        notifications: SEED_NOTIFICATIONS,
-        settings: SEED_SETTINGS,
-      });
-      console.log('[CrimeGPT] Seed complete.');
-    }
-
-    const [users, roles, legalSections, judgments, cases, evidence, documents, auditLogs, settings, allDiaryEntries] = await Promise.all([
+    // PHASE 1: Read only public data needed before login
+    console.log('[CrimeGPT] Step 2: Reading public data (users, roles, settings, legal intel)...');
+    const [users, roles, legalSections, judgments, settings] = await Promise.all([
       db.getAllUsers(),
       db.getRoles(),
       db.getAllLegalSections(),
       db.getAllJudgments(),
-      db.getAllCases(),
-      db.getAllEvidence(),
-      db.getAllDocuments(),
-      db.getAllAuditLogs(),
       db.getSettings(),
-      db.getAllDiaryEntries(),
     ]);
+    console.log('[CrimeGPT] Step 2 complete');
 
-    // Merge diary entries from /diaryEntries/ into cases before hydration
-    mergeDiaryEntriesIntoCases(cases, allDiaryEntries);
+    // DEBUG: Log raw Firebase data (phase 1)
+    console.log('[CrimeGPT DEBUG] Raw Firebase data (phase 1 - public):', {
+      users: Object.keys(users).length,
+      roles: roles ? Object.keys(roles).length : 0,
+      legalSections: Object.keys(legalSections).length,
+      judgments: Object.keys(judgments).length,
+      settings: settings ? 'exists' : 'null',
+    });
 
+    // Hydrate public data
+    console.log('[CrimeGPT] Step 3: Hydrating public store...');
     hydrateUsers(users);
     hydrateUserStates();
     hydrateRoles(roles);
     hydrateLegalSections(legalSections);
     hydrateJudgments(judgments);
-    hydrateCases(cases);
-    hydrateEvidence(evidence);
-    hydrateDocuments(documents);
-    hydrateAuditLogs(auditLogs);
     hydrateSettings(settings);
+    console.log('[CrimeGPT] Step 3 complete');
 
-    // Auto-seed new legal sections and judgments if missing from Firebase
-    const existingSectionIds = new Set(Object.keys(legalSections));
-    const missingSections = SEED_LEGAL_SECTIONS.filter(s => !existingSectionIds.has(s.id));
-    const existingJudgmentIds = new Set(Object.keys(judgments));
-    const missingJudgments = SEED_JUDGMENTS.filter(j => !existingJudgmentIds.has(j.id));
+    // DEBUG: Log hydrated data (phase 1)
+    console.log('[CrimeGPT DEBUG] Hydrated store data (phase 1 - public):', {
+      users: Object.keys(USERS).length,
+    });
 
-    if (missingSections.length > 0 || missingJudgments.length > 0) {
-      console.log(`[CrimeGPT] Seeding ${missingSections.length} new legal sections and ${missingJudgments.length} new judgments...`);
-      const updates: Record<string, unknown> = {};
-      for (const section of missingSections) {
-        updates[`/legalSections/${section.id}`] = section;
-      }
-      for (const judgment of missingJudgments) {
-        updates[`/judgments/${judgment.id}`] = judgment;
-      }
-      await db.updateMultiple(updates);
-      // Re-hydrate with merged data
-      const [newLegalSections, newJudgments] = await Promise.all([
-        db.getAllLegalSections(),
-        db.getAllJudgments(),
-      ]);
-      hydrateLegalSections(newLegalSections);
-      hydrateJudgments(newJudgments);
-      console.log(`[CrimeGPT] Seeded ${missingSections.length} new sections and ${missingJudgments.length} new judgments.`);
-    }
-
+    // If Firebase returned empty data, show empty state (don't load seed)
+    // EXCEPTION: Users must always exist for auth to work
     if (Object.keys(users).length === 0) {
-      console.warn('[CrimeGPT] Firebase returned empty data — using local seed.');
-      hydrateFromLocalSeed();
+      console.warn('[CrimeGPT] Firebase returned empty data.');
+      console.warn('[CrimeGPT] Run migration script: npx tsx scripts/seed-firebase.ts');
+      // Load users from seed so auth can work (cases will be empty)
+      hydrateUsers(Object.fromEntries(SEED_USERS.map(u => [u.id, u])));
+      hydrateRoles(SEED_ROLES);
+      hydrateSettings(SEED_SETTINGS);
     }
 
     setupRealtimeListeners();
   } catch (err) {
-    console.warn('[CrimeGPT] Firebase init failed — using local seed data.', err);
-    hydrateFromLocalSeed();
+    console.error('[CrimeGPT] Firebase init failed.', err);
+    console.error('[CrimeGPT] Error stack:', err instanceof Error ? err.stack : 'No stack');
+    // Load minimal data from seed so app can function
+    hydrateUsers(Object.fromEntries(SEED_USERS.map(u => [u.id, u])));
+    hydrateRoles(SEED_ROLES);
+    hydrateSettings(SEED_SETTINGS);
+    // Cases, evidence, documents will be empty
   }
 
   push.syncPermissionState();
   _isInitialized = true;
+  // Clear any existing timers first (safe on first run; essential on HMR reload)
+  stopEscalationTimer();
+  stopDeadlineChecker();
+  stopGapChecker();
+  // Start all background tasks
   startEscalationTimer();
+  startDeadlineChecker();
+  startGapChecker();
   _initListeners.forEach(l => l());
+}
+
+/* ════════════════════════════════════════════
+   PHASE 2: Load user-specific data after login
+   ════════════════════════════════════════════ */
+export async function loadUserDataAfterLogin(role: UserRole): Promise<void> {
+  try {
+    console.log('[CrimeGPT] Phase 2: Loading cases, evidence, documents...');
+    const [cases, evidence, documents, allDiaryEntries] = await Promise.all([
+      db.getAllCases(),
+      db.getAllEvidence(),
+      db.getAllDocuments(),
+      db.getAllDiaryEntries(),
+    ]);
+
+    // Merge diary entries into cases
+    mergeDiaryEntriesIntoCases(cases, allDiaryEntries);
+
+    // Migrate old encrypted cases to plain text (one-time cleanup)
+    await migrateEncryptedCasesToPlaintext(cases);
+
+    // Hydrate user-specific data
+    hydrateCases(cases);
+    hydrateEvidence(evidence);
+    hydrateDocuments(documents);
+
+    console.log('[CrimeGPT DEBUG] Hydrated store data (phase 2 - user-specific):', {
+      cases: _cases.length,
+      evidence: _evidence.length,
+      documents: _documents.length,
+    });
+
+    // Admin-only: Load audit logs
+    if (role === 'admin') {
+      console.log('[CrimeGPT] Phase 2 (admin): Loading audit logs...');
+      const auditLogs = await db.getAllAuditLogs();
+      hydrateAuditLogs(auditLogs);
+      console.log('[CrimeGPT DEBUG] Audit logs loaded:', _auditLogs.length);
+    }
+
+    console.log('[CrimeGPT] Phase 2 complete');
+  } catch (err) {
+    console.error('[CrimeGPT] Phase 2 data loading failed:', err);
+    // App will show empty state for user data
+  }
 }
 
 /* ════════════════════════════════════════════
@@ -187,10 +218,11 @@ let USERS: Record<string, User> = {};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateUsers(data: Record<string, any>): void {
+  const valid = validateBatch('user', data, SCHEMAS.user);
   USERS = {};
-  for (const [id, u] of Object.entries(data)) {
-    USERS[id] = {
-      id,
+  for (const u of valid) {
+    USERS[u.id as string] = {
+      id: u.id,
       name: u.fullName || u.name,
       role: u.role,
       rank: u.rank || undefined,
@@ -547,104 +579,49 @@ export function subscribeAccessRequests(listener: () => void): () => void {
 }
 
 /* ════════════════════════════════════════════
-   SYSTEM SETTINGS
+   SYSTEM SETTINGS (wrappers over settingsModel)
    ════════════════════════════════════════════ */
-export interface SystemSettings {
-  autoSaveInterval: number;
-  sessionTimeout: number;
-  maxFileSize: number;
-  encryptionEnabled: boolean;
-  offlineMode: boolean;
-  autoBackup: boolean;
-  emailNotifications: boolean;
-  smsAlerts: boolean;
-  darkMode: boolean;
-  language: string;
-  policeStation: string;
-  district: string;
-  state: string;
-  firPrefix: string;
-}
-
-let _settings: SystemSettings = {
-  autoSaveInterval: 5, sessionTimeout: 30, maxFileSize: 50,
-  encryptionEnabled: true, offlineMode: true, autoBackup: true,
-  emailNotifications: true, smsAlerts: false, darkMode: false,
-  language: 'English', policeStation: 'Cybercrime PS, Ahmedabad',
-  district: 'Ahmedabad', state: 'Gujarat', firPrefix: 'FIR/CC/AHD',
-};
-let _settingsListeners: Array<() => void> = [];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hydrateSettings(data: any): void {
-  if (!data) return;
-  _settings = { ..._settings, ...data };
-  _settingsListeners.forEach(l => l());
-}
-
-export function getSettings(): SystemSettings { return { ..._settings }; }
+export function getSettings(): SystemSettings { return _getSettings(); }
 
 export function updateSettings(updates: Partial<SystemSettings>): void {
-  _settings = { ..._settings, ...updates };
-  db.updateSettings(updates);
-  _settingsListeners.forEach(l => l());
-  addAuditLog('UPDATE_SETTINGS', 'system', `System settings updated`, 'admin1');
+  updateSettingsRaw(updates);
+  addAuditLog('UPDATE_SETTINGS', 'system', 'System settings updated', 'admin1');
 }
 
 export function subscribeSettings(listener: () => void): () => void {
-  _settingsListeners.push(listener);
-  return () => { _settingsListeners = _settingsListeners.filter(l => l !== listener); };
+  return _subscribeSettings(listener);
 }
+
+export function hydrateSettings(data: unknown): void { _hydrateSettings(data); }
 
 /* ════════════════════════════════════════════
-   LEGAL SECTIONS
+   USER PREFERENCES (wrappers over settingsModel)
    ════════════════════════════════════════════ */
-let LEGAL_SECTIONS: LegalSection[] = [];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hydrateLegalSections(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  LEGAL_SECTIONS = Object.values(data).map((s: any) => ({
-    id: s.id,
-    act: s.act,
-    sectionNumber: s.sectionNumber,
-    title: s.title,
-    description: s.description,
-    keywords: s.keywords || [],
-    crimeTypes: s.crimeTypes || [],
-    evidence_required: s.evidence_required || [],
-    relatedSections: s.relatedSections || [],
-    punishment: s.punishment,
-    legacyReference: s.legacyReference,
-  }));
+export function getUserPreferences(userId?: string): UserPreferences {
+  const id = userId || getCurrentUserId();
+  return getUserPrefsForUser(id);
 }
 
-export function getLegalSections(): LegalSection[] {
-  return [...LEGAL_SECTIONS];
+export function updateUserPreferences(updates: Partial<UserPreferences>, userId?: string): void {
+  const id = userId || getCurrentUserId();
+  updateUserPrefsForUser(id, updates);
 }
+
+export function subscribeUserPreferences(listener: () => void): () => void {
+  return _subscribeUserPreferences(listener);
+}
+
+export function getHydrationErrors(): HydrationError[] { return _getHydrationErrors(); }
 
 /* ════════════════════════════════════════════
-   JUDGMENTS
+   LEGAL SECTIONS & JUDGMENTS (wrappers over legalModel)
    ════════════════════════════════════════════ */
-let JUDGMENTS: Judgment[] = [];
+export function getLegalSections() { return _getLegalSections(); }
+export function getJudgments() { return _getJudgments(); }
+export function hydrateLegalSections(data: unknown) { _hydrateLegalSections(data as Record<string, unknown>); }
+export function hydrateJudgments(data: unknown) { _hydrateJudgments(data as Record<string, unknown>); }
+export async function simulateLegalAnalysis(narrative: string, crimeCategory?: string) { return _simulateLegalAnalysis(narrative, crimeCategory); }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hydrateJudgments(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  JUDGMENTS = Object.values(data).map((j: any) => ({
-    id: j.id,
-    title: j.title,
-    court: j.court,
-    year: j.year,
-    summary: j.summary,
-    relevantSections: j.relevantSections || [],
-    citation: j.citation,
-  }));
-}
-
-export function getJudgments(): Judgment[] {
-  return [...JUDGMENTS];
-}
 
 /* ════════════════════════════════════════════
    CASES
@@ -682,16 +659,49 @@ function mergeDiaryEntriesIntoCases(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateCases(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _cases = Object.values(data).map((c: any) => ({
+  const valid = validateBatch('case', data, SCHEMAS.case);
+  
+  // Clean any encrypted fields before hydration
+  const cleanedCases = valid.map((c: any) => {
+    const cleaned = { ...c };
+    
+    // Helper to clean encrypted field objects
+    const cleanField = (obj: any): any => {
+      if (!obj || typeof obj !== 'object') return obj;
+      if ('ciphertext' in obj && 'iv' in obj) {
+        return '[Encrypted Data - Cleared]';
+      }
+      if (Array.isArray(obj)) {
+        return obj.map(item => cleanField(item));
+      }
+      const result: any = {};
+      for (const key of Object.keys(obj)) {
+        result[key] = cleanField(obj[key]);
+      }
+      return result;
+    };
+    
+    // Clean victim, accused, witnesses
+    if (cleaned.victim) cleaned.victim = cleanField(cleaned.victim);
+    if (cleaned.accused) cleaned.accused = cleanField(cleaned.accused);
+    if (cleaned.witnesses) cleaned.witnesses = cleanField(cleaned.witnesses);
+    
+    // Remove _encrypted field
+    delete cleaned._encrypted;
+    
+    return cleaned;
+  })
+  .filter((c: any) => !c.deleted);  // Filter out soft-deleted cases
+  
+  _cases = cleanedCases.map((c: any) => ({
     id: c.id,
     firNumber: c.firNumber,
     caseNumber: c.caseNumber,
     policeStation: c.policeStation,
     assignedOfficer: c.assignedOfficer,
     assignedStation: c.assignedStation || c.policeStation,
-    classification: c.classification || 'confidential',
-    clearanceRequired: c.clearanceRequired || 1,
+    classification: c.classification,
+    clearanceRequired: c.clearanceRequired,
     status: c.status,
     crimeType: c.crimeType,
     createdAt: c.createdAt,
@@ -699,18 +709,109 @@ function hydrateCases(data: Record<string, any>): void {
     victim: c.victim,
     accused: c.accused,
     incident: c.incident,
-    evidenceIds: c.evidenceIds || [],
-    legalSectionIds: c.legalSectionIds || [],
-    documentIds: c.documentIds || [],
-    diaryEntries: c.diaryEntries || [],
-    readinessScore: c.readinessScore || 0,
-    reviewStatus: c.reviewStatus || 'pending_io',
-    reviewComments: c.reviewComments || [],
+    evidenceIds: c.evidenceIds,
+    legalSectionIds: c.legalSectionIds,
+    documentIds: c.documentIds,
+    diaryEntries: c.diaryEntries,
+    readinessScore: c.readinessScore,
+    reviewStatus: c.reviewStatus,
+    reviewComments: c.reviewComments,
   }));
+
+  // Notify listeners immediately - no decryption needed
   _caseListeners.forEach(l => l());
 }
 
 let _caseListeners: Array<() => void> = [];
+
+/* ─── MIGRATION: Clean up old encrypted cases ─── */
+
+/**
+ * One-time migration: Removes encrypted field objects from old cases in Firebase.
+ * Replaces { ciphertext, iv, salt } with placeholder text since we can't decrypt them anymore.
+ */
+async function migrateEncryptedCasesToPlaintext(cases: Record<string, any>): Promise<void> {
+  // Check if migration already completed
+  const migrationKey = 'crimegpt_remove_encryption_migration_v1';
+  if (localStorage.getItem(migrationKey)) {
+    return; // Already migrated
+  }
+
+  console.log('[CrimeGPT] Checking for old encrypted cases to clean up...');
+  const updates: Record<string, unknown> = {};
+  let migratedCount = 0;
+
+  for (const [caseId, c] of Object.entries(cases)) {
+    if (!c || typeof c !== 'object') continue;
+
+    let needsUpdate = false;
+    const cleanedCase = { ...c };
+
+    // Helper function to check and clean encrypted fields
+    const cleanEncryptedField = (obj: any, path: string): any => {
+      if (!obj || typeof obj !== 'object') return obj;
+      
+      // Check if this is an encrypted field object
+      if ('ciphertext' in obj && 'iv' in obj) {
+        console.log(`[CrimeGPT] Cleaning encrypted field: ${path}`);
+        needsUpdate = true;
+        return '[Encrypted Data - Migration Cleared]';
+      }
+      
+      // Recursively clean nested objects
+      if (Array.isArray(obj)) {
+        return obj.map((item, idx) => cleanEncryptedField(item, `${path}[${idx}]`));
+      }
+      
+      const cleaned: any = {};
+      for (const key of Object.keys(obj)) {
+        cleaned[key] = cleanEncryptedField(obj[key], `${path}.${key}`);
+      }
+      return cleaned;
+    };
+
+    // Clean victim and accused fields
+    if (cleanedCase.victim) {
+      cleanedCase.victim = cleanEncryptedField(cleanedCase.victim, `${caseId}.victim`);
+    }
+    if (cleanedCase.accused) {
+      cleanedCase.accused = cleanEncryptedField(cleanedCase.accused, `${caseId}.accused`);
+    }
+    if (cleanedCase.witnesses) {
+      cleanedCase.witnesses = cleanEncryptedField(cleanedCase.witnesses, `${caseId}.witnesses`);
+    }
+
+    // Remove _encrypted field
+    if (cleanedCase._encrypted) {
+      delete cleanedCase._encrypted;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      // Update the local cases object (so React can render it immediately)
+      cases[caseId] = cleanedCase;
+      
+      // Also queue Firebase update
+      updates[`/cases/${caseId}`] = cleanedCase;
+      migratedCount++;
+    }
+  }
+
+  // Update Firebase with cleaned cases
+  if (migratedCount > 0) {
+    console.log(`[CrimeGPT] Migrating ${migratedCount} encrypted cases to plain text...`);
+    try {
+      await db.updateMultiple(updates);
+      localStorage.setItem(migrationKey, 'true');
+      console.log(`[CrimeGPT] ✅ Migration complete: ${migratedCount} cases cleaned up`);
+    } catch (err) {
+      console.error('[CrimeGPT] ❌ Migration failed:', err);
+    }
+  } else {
+    console.log('[CrimeGPT] No encrypted cases found to migrate');
+    localStorage.setItem(migrationKey, 'true');
+  }
+}
 
 export function getCases(): CaseRecord[] { return [..._cases]; }
 
@@ -747,9 +848,57 @@ export function updateCase(id: string, updates: Partial<CaseRecord>): void {
 }
 
 export function deleteCase(id: string): void {
+  const user = getCurrentUser();
+  const caseRecord = _cases.find(c => c.id === id);
+  if (!caseRecord) return;
+  
+  // Remove from local state
   _cases = _cases.filter(c => c.id !== id);
-  db.deleteCase(id);
+  
+  // Soft delete in Firebase (marks as deleted, doesn't remove)
+  db.softDeleteCase(id, user.id);
+  
+  addAuditLog('DELETE_CASE', id, `Soft deleted case ${caseRecord.firNumber}`);
   _caseListeners.forEach(l => l());
+}
+
+// Admin permanent delete
+export async function permanentlyDeleteCase(id: string): Promise<void> {
+  const caseRecord = _cases.find(c => c.id === id);
+  
+  _cases = _cases.filter(c => c.id !== id);
+  await db.permanentlyDeleteCase(id);
+  
+  addAuditLog('PERMANENT_DELETE_CASE', id, `Permanently deleted case ${caseRecord?.firNumber}`);
+  _caseListeners.forEach(l => l());
+}
+
+// Admin restore case
+export async function restoreCase(id: string): Promise<void> {
+  const caseData = await db.getCase(id);
+  if (!caseData) return;
+  
+  await db.restoreCase(id);
+  
+  const restoredCase = {
+    ...caseData,
+    deleted: false,
+    deletedAt: undefined,
+    deletedBy: undefined,
+    diaryEntries: caseData.diaryEntries || [],
+  } as CaseRecord;
+  
+  _cases.push(restoredCase);
+  addAuditLog('RESTORE_CASE', id, `Restored case ${caseData.firNumber}`);
+  _caseListeners.forEach(l => l());
+}
+
+// Get deleted cases for admin
+export async function getDeletedCases(): Promise<CaseRecord[]> {
+  const allCases = await db.getAllCases();
+  return Object.values(allCases)
+    .filter((c: any) => c.deleted === true)
+    .map(c => ({ ...c, diaryEntries: c.diaryEntries || [] })) as CaseRecord[];
 }
 
 export function addDiaryEntry(caseId: string, entry: DiaryEntry): void {
@@ -778,8 +927,8 @@ let _evidence: Evidence[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateEvidence(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _evidence = Object.values(data).map((e: any) => ({
+  const valid = validateBatch('evidence', data, SCHEMAS.evidence);
+  _evidence = valid.map((e: any) => ({
     id: e.id,
     caseId: e.caseId,
     fileName: e.fileName,
@@ -788,12 +937,12 @@ function hydrateEvidence(data: Record<string, any>): void {
     uploadedAt: e.uploadedAt,
     uploadedBy: e.uploadedBy,
     sha256Hash: e.sha256Hash,
-    tags: e.tags || [],
+    tags: e.tags,
     mimeType: e.mimeType,
     filePath: e.filePath,
-    fileData: e.fileData || undefined,
-    extractedEntities: e.extractedEntities || [],
-    chainOfCustody: e.chainOfCustody || [],
+    fileData: e.fileData,
+    extractedEntities: e.extractedEntities,
+    chainOfCustody: e.chainOfCustody,
   }));
   _evidenceListeners.forEach(l => l());
 }
@@ -848,18 +997,18 @@ let _documents: GeneratedDocument[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateDocuments(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _documents = Object.values(data).map((d: any) => ({
+  const valid = validateBatch('document', data, SCHEMAS.document);
+  _documents = valid.map((d: any) => ({
     id: d.id,
     caseId: d.caseId,
     type: d.type,
     title: d.title,
-    content: d.content || '',
+    content: d.content,
     generatedAt: d.generatedAt,
     generatedBy: d.generatedBy,
     status: d.status,
-    validationErrors: d.validationErrors || [],
-    version: d.version || 1,
+    validationErrors: d.validationErrors,
+    version: d.version,
   }));
 }
 
@@ -876,7 +1025,7 @@ export function addDocument(d: GeneratedDocument): void {
   // Workflow: notify of document generation
   const _du = getCurrentUser();
   const _dc = _cases.find(c => c.id === d.caseId);
-  dispatchWorkflowEvent(wf.buildWorkflowEvent({ eventType: 'document_generated', triggeredBy: _du.id, triggeredByName: _du.name, triggeredByRole: _du.role, caseId: d.caseId, firNumber: _dc?.firNumber || d.caseId, title: "Document Generated â€” " + (_dc?.firNumber || d.caseId), message: _du.name + " generated \"" + d.title + "\" for case " + (_dc?.firNumber || d.caseId) + ".", actions: [{ label: "View Document", type: "navigate", payload: "/documents" }] }));
+  dispatchWorkflowEvent(wf.buildWorkflowEvent({ eventType: 'document_generated', triggeredBy: _du.id, triggeredByName: _du.name, triggeredByRole: _du.role, caseId: d.caseId, firNumber: _dc?.firNumber || d.caseId, title: "Document Generated — " + (_dc?.firNumber || d.caseId), message: _du.name + " generated \"" + d.title + "\" for case " + (_dc?.firNumber || d.caseId) + ".", actions: [{ label: "View Document", type: "navigate", payload: "/documents" }] }));
 }
 
 /* ════════════════════════════════════════════
@@ -886,8 +1035,8 @@ let _auditLogs: AuditLog[] = [];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hydrateAuditLogs(data: Record<string, any>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _auditLogs = Object.values(data).map((l: any) => ({
+  const valid = validateBatch('auditLog', data, SCHEMAS.auditLog);
+  _auditLogs = valid.map((l: any) => ({
     id: l.id,
     userId: l.userId,
     userName: l.userName,
@@ -927,8 +1076,42 @@ let _notifListeners: Array<() => void> = [];
 
 export async function loadNotifications(userId: string): Promise<void> {
   _notifications = await db.getNotifications(userId);
+  
+  // Send browser notifications only for undelivered notifications
+  const undelivered = _notifications.filter(n => !n.delivered && n.deliveryAttempts !== undefined && n.deliveryAttempts < 3);
+  
+  for (const notif of undelivered) {
+    const success = await sendBrowserNotificationForStored(notif);
+    
+    if (success) {
+      // Mark as delivered in Firebase
+      await db.markNotificationDelivered(notif.id);
+      notif.delivered = true;
+      notif.deliveredAt = new Date().toISOString();
+    } else {
+      // Increment delivery attempts
+      notif.deliveryAttempts = (notif.deliveryAttempts || 0) + 1;
+      console.warn(`[CrimeGPT] Failed to deliver notification ${notif.id}, attempt ${notif.deliveryAttempts}`);
+    }
+  }
+  
   _notifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   _notifListeners.forEach(l => l());
+}
+
+// Helper function to send browser notification for stored notification
+async function sendBrowserNotificationForStored(notif: Notification): Promise<boolean> {
+  if (!push.isPushEnabled()) return false;
+  
+  return await push.sendBrowserNotification({
+    title: notif.title,
+    safeMessage: notif.message,
+    priority: notif.priority || 'normal',
+    caseId: notif.caseId,
+    firNumber: notif.firNumber,
+    tag: `crimegpt-${notif.id}`,
+    onClickUrl: notif.link || '/',
+  });
 }
 
 export function getNotifications(): Notification[] {
@@ -942,19 +1125,36 @@ export function markNotificationRead(id: string): void {
 }
 
 export function addNotification(n: Omit<Notification, 'id'>): void {
-  const notif: Notification = { ...n, id: `n-${Date.now()}` };
+  const notif: Notification = { 
+    ...n, 
+    id: `n-${Date.now()}`,
+    delivered: false,
+    deliveredAt: undefined,
+    deliveryAttempts: 0,
+  };
   _notifications = [notif, ..._notifications];
   db.addNotification(notif);
   _notifListeners.forEach(l => l());
+  
+  // Try to send browser notification immediately (if user is online)
+  if (push.shouldSendOSNotification()) {
+    sendBrowserNotificationForStored(notif).then(success => {
+      if (success) {
+        db.markNotificationDelivered(notif.id);
+        notif.delivered = true;
+        notif.deliveredAt = new Date().toISOString();
+      }
+    });
+  }
 }
 
 export function subscribeNotifications(listener: () => void): () => void {
   _notifListeners.push(listener);
   return () => { _notifListeners = _notifListeners.filter(l => l !== listener); };
 }
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   WORKFLOW ENGINE â€” CrimeGPT Alert Center
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ════════════════════════════════════════════
+   WORKFLOW ENGINE — CrimeGPT Alert Center
+   ════════════════════════════════════════════ */
 let _workflowEvents: WorkflowEvent[] = [];
 let _wfEventListeners: Array<() => void> = [];
 let _escalationTimerId: ReturnType<typeof setInterval> | null = null;
@@ -980,7 +1180,26 @@ export function dispatchWorkflowEvent(event: WorkflowEvent): void {
   const recipientIds = wf.resolveRecipients(event, ctx);
   const notifications = wf.generateNotificationsFromEvent(event, recipientIds);
   event.linkedNotificationIds = notifications.map(n => n.id);
-  for (const notif of notifications) { _notifications = [notif, ..._notifications]; db.addNotification(notif); }
+  for (const notif of notifications) { 
+    // Initialize delivery tracking
+    notif.delivered = false;
+    notif.deliveredAt = undefined;
+    notif.deliveryAttempts = 0;
+    
+    _notifications = [notif, ..._notifications]; 
+    db.addNotification(notif); 
+    
+    // Try immediate delivery if user is online
+    if (push.shouldSendOSNotification()) {
+      sendBrowserNotificationForStored(notif).then(success => {
+        if (success) {
+          db.markNotificationDelivered(notif.id);
+          notif.delivered = true;
+          notif.deliveredAt = new Date().toISOString();
+        }
+      });
+    }
+  }
   if (event.caseId) {
     const de: DiaryEntry = { id: "de-wf-" + Date.now(), caseId: event.caseId, timestamp: event.createdAt, action: "Workflow: " + event.eventType.replace(/_/g, ' '), description: event.message, performedBy: event.triggeredByName, category: 'other' };
     _cases = _cases.map(c => c.id === event.caseId ? { ...c, diaryEntries: [...c.diaryEntries, de] } : c);
@@ -1211,7 +1430,7 @@ export function getToasts(): Toast[] {
    AI ENGINE — Groq LLM + Fallback Simulators
    ════════════════════════════════════════════ */
 
-export function getIsAIConfigured(): boolean { return isAIConfigured(); }
+export async function getIsAIConfigured(): Promise<boolean> { return isAIConfigured(); }
 
 /* ─── Enhanced return type for entity extraction ─── */
 export interface EnhancedEntityResult {
@@ -1223,7 +1442,7 @@ export interface EnhancedEntityResult {
 
 /* ─── Main entity extraction (tries AI, falls back to simulator) ─── */
 export async function simulateEntityExtraction(text: string, crimeCategory?: string): Promise<EnhancedEntityResult> {
-  if (isAIConfigured()) {
+  if (await isAIConfigured()) {
     try {
       const ai = await analyzeComplaint(text);
 
@@ -1254,95 +1473,6 @@ export async function simulateEntityExtraction(text: string, crimeCategory?: str
   return { ...result, aiPowered: false };
 }
 
-/* ─── Main legal analysis (tries AI, falls back to simulator) ─── */
-export async function simulateLegalAnalysis(narrative: string, crimeCategory?: string): Promise<{ suggestions: LegalSuggestion[]; judgments: Judgment[] }> {
-  if (isAIConfigured()) {
-    try {
-      const sections = getLegalSections();
-      const aiSuggestions = await suggestLegalSections(narrative, sections.map(s => ({
-        id: s.id, act: s.act, sectionNumber: s.sectionNumber,
-        title: s.title, description: s.description,
-        keywords: s.keywords, crimeTypes: s.crimeTypes,
-      })), crimeCategory);
-
-      // Map AI results back to LegalSuggestion type
-      const suggestions: LegalSuggestion[] = aiSuggestions.map(ai => {
-        const section = sections.find(s => s.id === ai.sectionId);
-        return {
-          section: section || sections[0] || {} as LegalSection,
-          confidence: ai.confidence,
-          reasoning: ai.reasoning,
-          matchedKeywords: ai.matchedKeywords,
-        };
-      }).filter(s => s.section && s.section.id);
-
-      // Get AI-powered judgments
-      const crimeType = suggestions.length > 0 ? suggestions[0].section.title : 'General Offence';
-      const sectionIds = suggestions.map(s => s.section.id);
-
-      let judgments: Judgment[] = [];
-      try {
-        const aiJudgments = await findJudgments(crimeType, sectionIds);
-        // Convert AI judgments to our Judgment type
-        judgments = aiJudgments.map(j => ({
-          id: j.id,
-          title: j.title,
-          court: j.court,
-          year: j.year,
-          summary: `${j.summary}\n\nRelevance: ${j.relevance}`,
-          relevantSections: sectionIds,
-          citation: j.citation,
-        }));
-      } catch { /* judgments are optional */ }
-
-      // If AI found no suggestions, try fallback
-      if (suggestions.length === 0) {
-        return _simulateLegalAnalysisFallback(narrative);
-      }
-
-      return { suggestions, judgments };
-    } catch (err) {
-      console.warn('AI legal analysis failed, using fallback:', err);
-    }
-  }
-  return _simulateLegalAnalysisFallback(narrative);
-}
-
-/* ─── FALLBACK: Original keyword-based legal analysis ─── */
-function _simulateLegalAnalysisFallback(narrative: string): { suggestions: LegalSuggestion[]; judgments: Judgment[] } {
-  const lowerNarrative = narrative.toLowerCase();
-  const matched: LegalSuggestion[] = [];
-
-  for (const section of LEGAL_SECTIONS) {
-    const matchedKeywords = section.keywords.filter(kw => lowerNarrative.includes(kw));
-    if (matchedKeywords.length > 0 || section.crimeTypes.some(ct => lowerNarrative.includes(ct.toLowerCase()))) {
-      const confidence = Math.min(0.98, 0.6 + matchedKeywords.length * 0.1 + Math.random() * 0.1);
-      matched.push({
-        section,
-        confidence,
-        reasoning: `The complaint narrative contains keywords related to ${section.title}: ${matchedKeywords.join(', ') || section.crimeTypes[0] || 'related crime patterns'}. This section covers ${section.description.substring(0, 120)}...`,
-        matchedKeywords,
-      });
-    }
-  }
-
-  if (matched.length === 0) {
-    matched.push({
-      section: LEGAL_SECTIONS[0] || {} as LegalSection,
-      confidence: 0.55,
-      reasoning: 'General fraud indicators detected in the complaint narrative.',
-      matchedKeywords: ['fraud'],
-    });
-  }
-
-  matched.sort((a, b) => b.confidence - a.confidence);
-
-  const relevantJudgments = JUDGMENTS.filter(j =>
-    matched.some(m => j.relevantSections.includes(m.section.id))
-  );
-
-  return { suggestions: matched.slice(0, 5), judgments: relevantJudgments };
-}
 
 /* ─── FALLBACK: Original pattern-based entity extraction ─── */
 function _simulateEntityExtractionFallback(text: string, crimeCategory?: string): { crimeType: string; entities: Record<string, string> } {
@@ -1371,7 +1501,13 @@ function _simulateEntityExtractionFallback(text: string, crimeCategory?: string)
    UTILITY FUNCTIONS
    ════════════════════════════════════════════ */
 export function generateUniqueId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  // Use crypto.randomUUID() for cryptographically secure, non-predictable IDs
+  // Complies with audit log integrity requirements
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers (rare): use timestamp + high-entropy random
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 export function formatDate(dateStr: string): string {
@@ -1498,17 +1634,23 @@ export async function login(email: string, password: string, role: UserRole): Pr
     _authListeners.forEach(l => l(true));
     _roleListeners.forEach(l => l(role));
 
+    // PHASE 2: Load user-specific data after login (cases, evidence, documents, etc.)
+    console.log('[CrimeGPT] Login successful - loading user-specific data (Phase 2)...');
+    await loadUserDataAfterLogin(role);
+
+    // Persist session for auto-login on refresh
+    persistSession();
+
     // Load notifications for this user
     loadNotifications(userId);
+    
+    // Clean up old delivered notifications (runs in background)
+    db.deleteDeliveredNotifications(userId).catch(err => {
+      console.warn('[CrimeGPT] Notification cleanup failed:', err);
+    });
 
-    addAuditLog('LOGIN', role, `${USERS[userId]?.name || 'User'} logged in`, userId);
-
-    // Auto-request notification permission after successful login
-    setTimeout(() => {
-      push.requestPushPermission().then((granted) => {
-        console.log(`[CrimeGPT] Notification permission: ${granted ? 'granted' : 'denied'}`);
-      });
-    }, 1500);
+    // Re-initialize language from user preferences
+    reinitializeLanguage();
 
     return { success: true };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1522,6 +1664,7 @@ export async function login(email: string, password: string, role: UserRole): Pr
 export async function logout(): Promise<void> {
   const user = getCurrentUser();
   addAuditLog('LOGOUT', _currentRole, `${user?.name || 'User'} logged out`);
+  clearSession();
   await firebaseLogout();
   _isAuthenticated = false;
   _authListeners.forEach(l => l(false));
@@ -1538,6 +1681,7 @@ let _pendingRoleSwitch: UserRole | null = null;
 export function requestRoleSwitch(newRole: UserRole): void {
   const user = getCurrentUser();
   addAuditLog('LOGOUT', _currentRole, `${user?.name || 'User'} logged out (role switch to ${newRole.toUpperCase()})`);
+  clearSession();
   _isAuthenticated = false;
   _pendingRoleSwitch = newRole;
   _authListeners.forEach(l => l(false));
@@ -1576,6 +1720,100 @@ export async function createNewUser(
   return { success: true };
 }
 
+/* ════════════════════════════════════════════
+   SESSION PERSISTENCE (auto-login on refresh)
+   ════════════════════════════════════════════ */
+
+const SESSION_STORAGE_KEY = 'crimegpt_session';
+
+interface StoredSession {
+  role: UserRole;
+  userId: string;
+  loginTime: number;
+  lastActivity: number;
+}
+
+export function getSessionTimeoutMs(): number {
+  return (_getSettings().sessionTimeout || 30) * 60 * 1000;
+}
+
+export function persistSession(): void {
+  const now = Date.now();
+  const session: StoredSession = {
+    role: _currentRole,
+    userId: _currentUserId,
+    loginTime: now,
+    lastActivity: now,
+  };
+  try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session)); } catch { /* storage full or blocked */ }
+}
+
+export function clearSession(): void {
+  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* noop */ }
+}
+
+export function getStoredSession(): StoredSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as StoredSession;
+  } catch { return null; }
+}
+
+/**
+ * Updates the lastActivity timestamp in localStorage.
+ * Called on every user interaction while authenticated.
+ */
+export function touchSession(): void {
+  const stored = getStoredSession();
+  if (stored) {
+    stored.lastActivity = Date.now();
+    try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored)); } catch { /* noop */ }
+  }
+}
+
+/**
+ * Attempts to restore an authenticated session from localStorage.
+ * Returns true if session is valid and was restored, false otherwise.
+ * Called once on app init (page refresh).
+ */
+export function restoreSession(): boolean {
+  const stored = getStoredSession();
+  if (!stored) return false;
+
+  // Check session hasn't expired
+  const elapsed = Date.now() - stored.lastActivity;
+  if (elapsed > getSessionTimeoutMs()) {
+    clearSession();
+    return false;
+  }
+
+  // Check user still exists and is not suspended
+  const user = USERS[stored.userId];
+  if (!user) { clearSession(); return false; }
+
+  const uState = _userStates[stored.userId];
+  if (uState?.suspendedUntil && new Date(uState.suspendedUntil) > new Date()) {
+    clearSession();
+    return false;
+  }
+  if (uState && !uState.active && !uState.suspendedUntil) {
+    clearSession();
+    return false;
+  }
+
+  // Restore in-memory auth state (Firebase Auth is handled separately)
+  _isAuthenticated = true;
+  _currentRole = stored.role;
+  _currentUserId = stored.userId;
+  _authListeners.forEach(l => l(true));
+  _roleListeners.forEach(l => l(stored.role));
+
+  // Refresh lastActivity to now (user just opened the app)
+  touchSession();
+
+  return true;
+}
 /* ─── NETWORK STATE (local) ─── */
 let _isOnline = navigator.onLine;
 let _onlineListeners: Array<(online: boolean) => void> = [];

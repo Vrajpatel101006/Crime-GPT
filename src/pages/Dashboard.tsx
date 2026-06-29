@@ -12,7 +12,8 @@ import {
   formatDate, getCurrentRole, getCurrentUser, getUserRank, rankName,
   getAllUsers
 } from '../store';
-import type { CaseRecord } from '../types';
+import { useTranslation } from '../hooks/useTranslation';
+import { StatCard, CaseRow, ReadinessBar } from './dashboard/SharedComponents.tsx';
 
 /* ═══════════════════════════════════════════
    DASHBOARD — Role-specific views
@@ -40,90 +41,6 @@ export default function Dashboard() {
 }
 
 /* ═══════════════════════════════════════════
-   SHARED COMPONENTS
-   ═══════════════════════════════════════════ */
-
-function StatCard({ icon: Icon, value, label, change, variant }: {
-  icon: any; value: string | number; label: string; change?: string; variant: 'primary' | 'warning' | 'success' | 'info';
-}) {
-  return (
-    <div className={`stat-card ${variant} fade-in-up`}>
-      <div className={`stat-icon ${variant}`}><Icon size={22} /></div>
-      <div className="stat-info">
-        <div className="stat-value">{value}</div>
-        <div className="stat-label">{label}</div>
-        {change && <div className="stat-change up">{change}</div>}
-      </div>
-    </div>
-  );
-}
-
-function CaseRow({ c, navigate, showStation }: { c: CaseRecord; navigate: (path: string) => void; showStation?: boolean }) {
-  return (
-    <div
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-1)',
-        cursor: 'pointer', transition: 'background 0.15s',
-      }}
-      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-3)')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface-1)')}
-      onClick={() => navigate('/cases')}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 'var(--radius-md)',
-          background: c.status === 'active' ? 'rgba(201,168,76,0.14)' : c.status === 'approved' ? 'rgba(0,255,65,0.1)' : c.status === 'under_review' ? 'rgba(245,158,11,0.12)' : 'rgba(255,184,0,0.12)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: c.status === 'active' ? 'var(--govt-gold-light)' : c.status === 'approved' ? 'var(--cyber-green)' : c.status === 'under_review' ? '#f59e0b' : 'var(--brand-warning)',
-        }}>
-          <FolderOpen size={18} />
-        </div>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{c.firNumber}</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            {c.crimeType} • {c.victim.name}
-            {showStation && ` • ${c.assignedStation || c.policeStation}`}
-          </div>
-        </div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {c.classification && (
-          <span style={{
-            fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em',
-            padding: '2px 8px', borderRadius: 'var(--radius-sm)',
-            background: c.classification === 'secret' ? 'rgba(239,68,68,0.1)' : c.classification === 'confidential' ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
-            color: c.classification === 'secret' ? '#ef4444' : c.classification === 'confidential' ? '#f59e0b' : '#10b981',
-            border: `1px solid ${c.classification === 'secret' ? 'rgba(239,68,68,0.25)' : c.classification === 'confidential' ? 'rgba(245,158,11,0.25)' : 'rgba(16,185,129,0.25)'}`,
-            textTransform: 'uppercase',
-          }}>{c.classification}</span>
-        )}
-        <div style={{ textAlign: 'right' }}>
-          <span className={`badge ${c.status === 'active' ? 'badge-primary' : c.status === 'approved' ? 'badge-success' : c.status === 'under_review' ? 'badge-warning' : 'badge-neutral'}`}>
-            {c.status.replace('_', ' ')}
-          </span>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>{formatDate(c.createdAt)}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReadinessBar({ c }: { c: CaseRecord }) {
-  return (
-    <div style={{ marginBottom: 'var(--space-md)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{c.firNumber}</span>
-        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: c.readinessScore >= 80 ? 'var(--cyber-green)' : 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{c.readinessScore}%</span>
-      </div>
-      <div className="confidence-bar">
-        <div className={`confidence-fill ${c.readinessScore >= 80 ? 'high' : c.readinessScore >= 50 ? 'medium' : 'low'}`} style={{ width: `${c.readinessScore}%` }} />
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════
    IO DASHBOARD — Investigation Officer
    Focus: My assigned cases, my evidence, readiness
    ═══════════════════════════════════════════ */
@@ -133,6 +50,7 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
   const userRank = getUserRank(user);
   const cases = getAccessibleCases();
   const allEvidence = getEvidence();
+  const { t } = useTranslation();
 
   // IO-specific: cases assigned to me
   const myCases = cases.filter(c => c.assignedOfficer === user.id);
@@ -146,27 +64,27 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><Briefcase size={28} style={{ color: 'var(--govt-gold-light)' }} /> My Investigations</h1>
+          <h1><Briefcase size={28} style={{ color: 'var(--govt-gold-light)' }} /> {t('dashboard.myInvestigations')}</h1>
           <p className="text-sm text-muted" style={{ marginTop: 4, fontFamily: 'var(--font-mono)', letterSpacing: '0.03em' }}>
-            {rankName(userRank)} • {user.station} • {myActiveCases.length} active investigation{myActiveCases.length !== 1 ? 's' : ''}
+            {rankName(userRank)} • {user.station} • {myActiveCases.length} {myActiveCases.length !== 1 ? t('dashboard.activeInvestigations') : t('dashboard.activeInvestigation')}
           </p>
         </div>
         <div className="page-header-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/evidence')}>
-            <Upload size={16} /> Upload Evidence
+            <Upload size={16} /> {t('dashboard.uploadEvidence')}
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/cases')}>
-            <Plus size={16} /> New Case
+            <Plus size={16} /> {t('dashboard.newCase')}
           </button>
         </div>
       </div>
 
       {/* Stats */}
       <div className="stat-grid stagger" style={{ marginBottom: 'var(--space-xl)' }}>
-        <StatCard icon={FolderOpen} value={myActiveCases.length} label="Active Cases" change={`${myCases.length} total assigned`} variant="primary" />
-        <StatCard icon={Upload} value={myEvidence.length} label="My Evidence Files" change="All hash-verified" variant="success" />
-        <StatCard icon={Clock} value={pendingReviews.length} label="Pending Reviews" change="Awaiting SHO/Legal" variant="warning" />
-        <StatCard icon={BookOpen} value={totalDiaryEntries} label="Diary Entries" change={`${avgReadiness}% avg readiness`} variant="info" />
+        <StatCard icon={FolderOpen} value={myActiveCases.length} label={t('dashboard.activeCases')} change={`${myCases.length} ${t('dashboard.totalAssigned')}`} variant="primary" />
+        <StatCard icon={Upload} value={myEvidence.length} label={t('dashboard.myEvidenceFiles')} change={t('dashboard.allHashVerified')} variant="success" />
+        <StatCard icon={Clock} value={pendingReviews.length} label={t('dashboard.pendingReviews')} change={t('dashboard.awaitingSHOLegal')} variant="warning" />
+        <StatCard icon={BookOpen} value={totalDiaryEntries} label={t('dashboard.diaryEntries')} change={`${avgReadiness}% ${t('dashboard.avgReadiness')}`} variant="info" />
       </div>
 
       <div className="grid-2" style={{ gap: 'var(--space-lg)' }}>
@@ -174,8 +92,8 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">My Active Cases</div>
-              <div className="card-subtitle">Cases assigned to you</div>
+              <div className="card-title">{t('dashboard.myActiveCases')}</div>
+              <div className="card-subtitle">{t('dashboard.casesAssignedToYou')}</div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/cases')}>
               View all <ArrowRight size={14} />
@@ -183,7 +101,7 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
             {myCases.length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>No cases assigned yet</div>
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>{t('dashboard.noCasesAssignedYet')}</div>
             ) : myCases.slice(0, 5).map(c => <CaseRow key={c.id} c={c} navigate={navigate} />)}
           </div>
         </div>
@@ -192,8 +110,8 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Investigation Readiness</div>
-              <div className="card-subtitle">Case completeness tracker</div>
+              <div className="card-title">{t('dashboard.investigationReadiness')}</div>
+              <div className="card-subtitle">{t('dashboard.caseCompletenessTracker')}</div>
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 'var(--space-md)' }}>
@@ -208,7 +126,7 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
               </svg>
               <div className="ring-text">
                 <span className="ring-value">{avgReadiness}</span>
-                <span className="ring-label">Average</span>
+                <span className="ring-label">{t('dashboard.average')}</span>
               </div>
             </div>
             <div style={{ width: '100%', marginTop: 'var(--space-lg)' }}>
@@ -222,8 +140,8 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
       <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
         <div className="card-header">
           <div>
-            <div className="card-title">Recent Evidence</div>
-            <div className="card-subtitle">Files you've uploaded</div>
+            <div className="card-title">{t('dashboard.recentEvidence')}</div>
+            <div className="card-subtitle">{t('dashboard.filesYouUploaded')}</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/evidence')}>
             View all <ArrowRight size={14} />
@@ -231,7 +149,7 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
         </div>
         <div className="table-wrapper">
           <table className="table">
-            <thead><tr><th>File</th><th>Case</th><th>Type</th><th>Uploaded</th><th>Status</th></tr></thead>
+            <thead><tr><th>{t('dashboard.file')}</th><th>{t('dashboard.case')}</th><th>{t('dashboard.type')}</th><th>{t('dashboard.uploaded')}</th><th>{t('dashboard.status')}</th></tr></thead>
             <tbody>
               {myEvidence.slice(0, 5).map(ev => (
                 <tr key={ev.id}>
@@ -239,11 +157,11 @@ function IODashboard({ navigate }: { navigate: (path: string) => void }) {
                   <td><code style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{ev.caseId}</code></td>
                   <td><span className="badge badge-neutral">{ev.fileType}</span></td>
                   <td style={{ fontSize: '0.82rem' }}>{formatDate(ev.uploadedAt)}</td>
-                  <td><span className="badge badge-success">Verified</span></td>
+                  <td><span className="badge badge-success">{t('dashboard.verified')}</span></td>
                 </tr>
               ))}
               {myEvidence.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No evidence uploaded yet</td></tr>
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>{t('dashboard.noEvidenceUploadedYet')}</td></tr>
               )}
             </tbody>
           </table>
@@ -263,6 +181,7 @@ function SHODashboard({ navigate }: { navigate: (path: string) => void }) {
   const userRank = getUserRank(user);
   const cases = getAccessibleCases();
   const allUsers = getAllUsers();
+  const { t } = useTranslation();
 
   const stationCases = cases.filter(c => (c.assignedStation || c.policeStation) === user.station);
   const activeCases = stationCases.filter(c => c.status === 'active' || c.status === 'under_review');
@@ -281,27 +200,27 @@ function SHODashboard({ navigate }: { navigate: (path: string) => void }) {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><ShieldCheck size={28} style={{ color: 'var(--govt-gold-light)' }} /> Station Command</h1>
+          <h1><ShieldCheck size={28} style={{ color: 'var(--govt-gold-light)' }} /> {t('dashboard.stationCommand')}</h1>
           <p className="text-sm text-muted" style={{ marginTop: 4, fontFamily: 'var(--font-mono)', letterSpacing: '0.03em' }}>
-            {rankName(userRank)} • {user.station} • Supervising {Object.keys(officerWorkload).length} officer(s)
+            {rankName(userRank)} • {user.station} • {t('dashboard.supervising')} {Object.keys(officerWorkload).length} {t('dashboard.officers')}
           </p>
         </div>
         <div className="page-header-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/review')}>
-            <CheckCircle2 size={16} /> Review Queue ({pendingApproval.length})
+            <CheckCircle2 size={16} /> {t('dashboard.reviewQueue')} ({pendingApproval.length})
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/cases')}>
-            <Plus size={16} /> New Case
+            <Plus size={16} /> {t('dashboard.newCase')}
           </button>
         </div>
       </div>
 
       {/* Stats */}
       <div className="stat-grid stagger" style={{ marginBottom: 'var(--space-xl)' }}>
-        <StatCard icon={FolderOpen} value={activeCases.length} label="Active Station Cases" change={`${stationCases.length} total`} variant="primary" />
-        <StatCard icon={AlertTriangle} value={pendingApproval.length} label="Pending My Approval" change="Requires your review" variant="warning" />
-        <StatCard icon={Users} value={Object.keys(officerWorkload).length} label="Active Officers" change="At this station" variant="success" />
-        <StatCard icon={BarChart3} value={`${avgReadiness}%`} label="Avg Readiness" change="Station-wide" variant="info" />
+        <StatCard icon={FolderOpen} value={activeCases.length} label={t('dashboard.activeStationCases')} change={`${stationCases.length} ${t('dashboard.total')}`} variant="primary" />
+        <StatCard icon={AlertTriangle} value={pendingApproval.length} label={t('dashboard.pendingMyApproval')} change={t('dashboard.requiresYourReview')} variant="warning" />
+        <StatCard icon={Users} value={Object.keys(officerWorkload).length} label={t('dashboard.activeOfficers')} change={t('dashboard.atThisStation')} variant="success" />
+        <StatCard icon={BarChart3} value={`${avgReadiness}%`} label={t('dashboard.avgReadiness')} change={t('dashboard.stationWide')} variant="info" />
       </div>
 
       <div className="grid-2" style={{ gap: 'var(--space-lg)' }}>
@@ -309,8 +228,8 @@ function SHODashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Approval Queue</div>
-              <div className="card-subtitle">Cases awaiting SHO review</div>
+              <div className="card-title">{t('dashboard.approvalQueue')}</div>
+              <div className="card-subtitle">{t('dashboard.casesAwaitingSHOReview')}</div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/review')}>
               View all <ArrowRight size={14} />
@@ -320,7 +239,7 @@ function SHODashboard({ navigate }: { navigate: (path: string) => void }) {
             {pendingApproval.length === 0 ? (
               <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <CheckCircle2 size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
-                <div>No cases pending your approval</div>
+                <div>{t('dashboard.noCasesPendingApproval')}</div>
               </div>
             ) : pendingApproval.slice(0, 5).map(c => <CaseRow key={c.id} c={c} navigate={navigate} />)}
           </div>
@@ -330,13 +249,13 @@ function SHODashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Officer Workload</div>
-              <div className="card-subtitle">Case distribution across officers</div>
+              <div className="card-title">{t('dashboard.officerWorkload')}</div>
+              <div className="card-subtitle">{t('dashboard.caseDistributionAcrossOfficers')}</div>
             </div>
           </div>
           <div style={{ padding: 'var(--space-md)' }}>
             {Object.entries(officerWorkload).length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>No officer data</div>
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>{t('dashboard.noOfficerData')}</div>
             ) : Object.entries(officerWorkload).map(([name, count]) => {
               const maxCount = Math.max(...Object.values(officerWorkload), 1);
               const pct = Math.round((count / maxCount) * 100);
@@ -344,7 +263,7 @@ function SHODashboard({ navigate }: { navigate: (path: string) => void }) {
                 <div key={name} style={{ marginBottom: 'var(--space-md)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{name}</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{count} case{count !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{count} {count !== 1 ? t('dashboard.cases') : t('dashboard.case')}</span>
                   </div>
                   <div className="confidence-bar">
                     <div className="confidence-fill medium" style={{ width: `${pct}%` }} />
@@ -360,8 +279,8 @@ function SHODashboard({ navigate }: { navigate: (path: string) => void }) {
       <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
         <div className="card-header">
           <div>
-            <div className="card-title">Station Cases</div>
-            <div className="card-subtitle">All cases at {user.station}</div>
+            <div className="card-title">{t('dashboard.stationCases')}</div>
+            <div className="card-subtitle">{t('dashboard.allCasesAt')} {user.station}</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/cases')}>
             View all <ArrowRight size={14} />
@@ -385,6 +304,7 @@ function LegalDashboard({ navigate }: { navigate: (path: string) => void }) {
   const userRank = getUserRank(user);
   const cases = getAccessibleCases();
   const documents = getDocuments();
+  const { t } = useTranslation();
 
   const pendingLegal = cases.filter(c => c.reviewStatus === 'pending_legal');
   const reviewedCases = cases.filter(c => c.status === 'approved' || c.reviewStatus === 'approved');
@@ -405,27 +325,27 @@ function LegalDashboard({ navigate }: { navigate: (path: string) => void }) {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><Scale size={28} style={{ color: 'var(--govt-gold-light)' }} /> Legal Review Desk</h1>
+          <h1><Scale size={28} style={{ color: 'var(--govt-gold-light)' }} /> {t('dashboard.legalReviewDesk')}</h1>
           <p className="text-sm text-muted" style={{ marginTop: 4, fontFamily: 'var(--font-mono)', letterSpacing: '0.03em' }}>
-            {rankName(userRank)} • Legal Advisory Wing • {pendingLegal.length} case(s) awaiting review
+            {rankName(userRank)} • {t('dashboard.legalAdvisoryWing')} • {pendingLegal.length} {t('dashboard.casesAwaitingReview')}
           </p>
         </div>
         <div className="page-header-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/legal')}>
-            <Scale size={16} /> Legal Intel
+            <Scale size={16} /> {t('nav.legal')}
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/review')}>
-            <CheckCircle2 size={16} /> Review Queue ({pendingLegal.length})
+            <CheckCircle2 size={16} /> {t('dashboard.reviewQueue')} ({pendingLegal.length})
           </button>
         </div>
       </div>
 
       {/* Stats */}
       <div className="stat-grid stagger" style={{ marginBottom: 'var(--space-xl)' }}>
-        <StatCard icon={AlertTriangle} value={pendingLegal.length} label="Pending Legal Review" change="Requires your opinion" variant="warning" />
-        <StatCard icon={CheckCircle2} value={reviewedCases.length} label="Cases Reviewed" change="Approved for chargesheet" variant="success" />
-        <StatCard icon={Scale} value={Object.keys(sectionCounts).length} label="Legal Sections" change="Referenced across cases" variant="info" />
-        <StatCard icon={FileText} value={documents.length} label="Documents Drafted" change="Court-ready files" variant="primary" />
+        <StatCard icon={AlertTriangle} value={pendingLegal.length} label={t('dashboard.pendingLegalReview')} change={t('dashboard.requiresYourOpinion')} variant="warning" />
+        <StatCard icon={CheckCircle2} value={reviewedCases.length} label={t('dashboard.casesReviewed')} change={t('dashboard.approvedForChargesheet')} variant="success" />
+        <StatCard icon={Scale} value={Object.keys(sectionCounts).length} label={t('dashboard.legalSections')} change={t('dashboard.referencedAcrossCases')} variant="info" />
+        <StatCard icon={FileText} value={documents.length} label={t('dashboard.documentsDrafted')} change={t('dashboard.courtReadyFiles')} variant="primary" />
       </div>
 
       <div className="grid-2" style={{ gap: 'var(--space-lg)' }}>
@@ -433,8 +353,8 @@ function LegalDashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Legal Review Queue</div>
-              <div className="card-subtitle">Cases awaiting legal opinion</div>
+              <div className="card-title">{t('dashboard.legalReviewQueue')}</div>
+              <div className="card-subtitle">{t('dashboard.casesAwaitingLegalOpinion')}</div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/review')}>
               View all <ArrowRight size={14} />
@@ -444,7 +364,7 @@ function LegalDashboard({ navigate }: { navigate: (path: string) => void }) {
             {pendingLegal.length === 0 ? (
               <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <CheckCircle2 size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
-                <div>No cases pending legal review</div>
+                <div>{t('dashboard.noCasesPendingLegalReview')}</div>
               </div>
             ) : pendingLegal.slice(0, 5).map(c => <CaseRow key={c.id} c={c} navigate={navigate} />)}
           </div>
@@ -454,16 +374,16 @@ function LegalDashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Most Referenced Sections</div>
-              <div className="card-subtitle">BNS/BNSS/IT Act usage across cases</div>
+              <div className="card-title">{t('dashboard.mostReferencedSections')}</div>
+              <div className="card-subtitle">{t('dashboard.bnsBNSSITActUsageAcrossCases')}</div>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/legal')}>
-              Legal Intel <ArrowRight size={14} />
+              {t('nav.legal')} <ArrowRight size={14} />
             </button>
           </div>
           <div style={{ padding: 'var(--space-md)' }}>
             {topSections.length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>No section data</div>
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>{t('dashboard.noSectionData')}</div>
             ) : topSections.map(([sectionId, count]) => {
               const maxCount = topSections[0][1] as number;
               const pct = Math.round((count / (maxCount as number)) * 100);
@@ -471,7 +391,7 @@ function LegalDashboard({ navigate }: { navigate: (path: string) => void }) {
                 <div key={sectionId} style={{ marginBottom: 'var(--space-md)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{sectionId}</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{count} case{count !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{count} {count !== 1 ? t('dashboard.cases') : t('dashboard.case')}</span>
                   </div>
                   <div className="confidence-bar">
                     <div className="confidence-fill high" style={{ width: `${pct}%` }} />
@@ -487,8 +407,8 @@ function LegalDashboard({ navigate }: { navigate: (path: string) => void }) {
       <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
         <div className="card-header">
           <div>
-            <div className="card-title">Case Readiness Overview</div>
-            <div className="card-subtitle">Average readiness: {avgReadiness}% — cases visible to your clearance level</div>
+            <div className="card-title">{t('dashboard.caseReadinessOverview')}</div>
+            <div className="card-subtitle">{t('dashboard.averageReadiness')}: {avgReadiness}% — {t('dashboard.casesVisibleToClearanceLevel')}</div>
           </div>
         </div>
         <div style={{ padding: 'var(--space-md)' }}>
@@ -512,6 +432,7 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
   const evidence = getEvidence();
   const documents = getDocuments();
   const auditLogs = getAuditLogs();
+  const { t } = useTranslation();
 
   const activeUsers = Object.values(allUsers).length;
   const activeCases = allCases.filter(c => c.status === 'active' || c.status === 'under_review').length;
@@ -534,30 +455,30 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><Activity size={28} style={{ color: 'var(--govt-gold-light)' }} /> System Command</h1>
+          <h1><Activity size={28} style={{ color: 'var(--govt-gold-light)' }} /> {t('dashboard.systemCommand')}</h1>
           <p className="text-sm text-muted" style={{ marginTop: 4, fontFamily: 'var(--font-mono)', letterSpacing: '0.03em' }}>
-            {rankName(userRank)} • {user.station} • Full system oversight • {activeUsers} registered users
+            {rankName(userRank)} • {user.station} • {t('dashboard.fullSystemOversight')} • {activeUsers} {t('dashboard.registeredUsers')}
           </p>
         </div>
         <div className="page-header-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/audit')}>
-            <ScrollText size={16} /> Audit Logs
+            <ScrollText size={16} /> {t('nav.audit')}
           </button>
           <button className="btn btn-secondary" onClick={() => navigate('/admin')}>
-            <Users size={16} /> Manage Users
+            <Users size={16} /> {t('dashboard.manageUsers')}
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/cases')}>
-            <Plus size={16} /> New Case
+            <Plus size={16} /> {t('dashboard.newCase')}
           </button>
         </div>
       </div>
 
       {/* Stats */}
       <div className="stat-grid stagger" style={{ marginBottom: 'var(--space-xl)' }}>
-        <StatCard icon={Users} value={activeUsers} label="Registered Users" change="Across all stations" variant="info" />
-        <StatCard icon={FolderOpen} value={activeCases} label="Active Cases" change={`${allCases.length} total`} variant="primary" />
-        <StatCard icon={BarChart3} value={`${avgReadiness}%`} label="System Readiness" change="Average score" variant="success" />
-        <StatCard icon={ScrollText} value={auditLogs.length} label="Audit Events" change="Tamper-proof trail" variant="warning" />
+        <StatCard icon={Users} value={activeUsers} label={t('dashboard.registeredUsers')} change={t('dashboard.acrossAllStations')} variant="info" />
+        <StatCard icon={FolderOpen} value={activeCases} label={t('dashboard.activeCases')} change={`${allCases.length} ${t('dashboard.total')}`} variant="primary" />
+        <StatCard icon={BarChart3} value={`${avgReadiness}%`} label={t('dashboard.systemReadiness')} change={t('dashboard.averageScore')} variant="success" />
+        <StatCard icon={ScrollText} value={auditLogs.length} label={t('dashboard.auditEvents')} change={t('dashboard.tamperProofTrail')} variant="warning" />
       </div>
 
       {/* Station & Classification Breakdown */}
@@ -566,13 +487,13 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Station Distribution</div>
-              <div className="card-subtitle">Cases across police stations</div>
+              <div className="card-title">{t('dashboard.stationDistribution')}</div>
+              <div className="card-subtitle">{t('dashboard.casesAcrossPoliceStations')}</div>
             </div>
           </div>
           <div style={{ padding: 'var(--space-md)' }}>
             {Object.entries(stationCounts).length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>No station data</div>
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>{t('dashboard.noStationData')}</div>
             ) : Object.entries(stationCounts).map(([station, count]) => {
               const maxCount = Math.max(...Object.values(stationCounts), 1);
               const pct = Math.round((count / maxCount) * 100);
@@ -580,7 +501,7 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
                 <div key={station} style={{ marginBottom: 'var(--space-md)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{station}</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{count} case{count !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{count} {count !== 1 ? t('dashboard.cases') : t('dashboard.case')}</span>
                   </div>
                   <div className="confidence-bar">
                     <div className="confidence-fill medium" style={{ width: `${pct}%` }} />
@@ -595,15 +516,15 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
         <div className="card">
           <div className="card-header">
             <div>
-              <div className="card-title">Data Classification</div>
-              <div className="card-subtitle">Security classification breakdown</div>
+              <div className="card-title">{t('dashboard.dataClassification')}</div>
+              <div className="card-subtitle">{t('dashboard.securityClassificationBreakdown')}</div>
             </div>
           </div>
           <div style={{ padding: 'var(--space-md)' }}>
             {[
-              { label: 'Secret', count: classCounts.secret, color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
-              { label: 'Confidential', count: classCounts.confidential, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-              { label: 'Public', count: classCounts.public, color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
+              { label: t('dashboard.secret'), count: classCounts.secret, color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+              { label: t('dashboard.confidential'), count: classCounts.confidential, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+              { label: t('dashboard.public'), count: classCounts.public, color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
             ].map(item => {
               const total = classCounts.secret + classCounts.confidential + classCounts.public;
               const pct = total > 0 ? Math.round((item.count / total) * 100) : 0;
@@ -623,11 +544,11 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
           <div style={{ padding: '0 var(--space-md) var(--space-md)', display: 'flex', gap: 'var(--space-md)' }}>
             <div style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-1)', textAlign: 'center' }}>
               <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>{evidence.length}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>Evidence Files</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('dashboard.evidenceFiles')}</div>
             </div>
             <div style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-1)', textAlign: 'center' }}>
               <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>{documents.length}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>Documents</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('dashboard.documents')}</div>
             </div>
           </div>
         </div>
@@ -637,17 +558,17 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
       <div className="card">
         <div className="card-header">
           <div>
-            <div className="card-title">Recent System Activity</div>
-            <div className="card-subtitle">Latest actions across all users</div>
+            <div className="card-title">{t('dashboard.recentSystemActivity')}</div>
+            <div className="card-subtitle">{t('dashboard.latestActionsAcrossAllUsers')}</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/audit')}>
-            Full Audit Log <ArrowRight size={14} />
+            {t('dashboard.fullAuditLog')} <ArrowRight size={14} />
           </button>
         </div>
         <div className="table-wrapper">
           <table className="table">
             <thead>
-              <tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr>
+              <tr><th>{t('dashboard.time')}</th><th>{t('dashboard.user')}</th><th>{t('dashboard.action')}</th><th>{t('dashboard.details')}</th></tr>
             </thead>
             <tbody>
               {auditLogs.slice(0, 8).map(log => (
@@ -686,11 +607,11 @@ function AdminDashboard({ navigate }: { navigate: (path: string) => void }) {
       <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
         <div className="card-header">
           <div>
-            <div className="card-title">All Cases</div>
-            <div className="card-subtitle">Complete case registry — admin override active</div>
+            <div className="card-title">{t('dashboard.allCases')}</div>
+            <div className="card-subtitle">{t('dashboard.completeCaseRegistry')}</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/cases')}>
-            Case Manager <ArrowRight size={14} />
+            {t('dashboard.caseManager')} <ArrowRight size={14} />
           </button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>

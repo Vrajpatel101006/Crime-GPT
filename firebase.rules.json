@@ -1,0 +1,70 @@
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null",
+      "$userId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || $userId === auth.uid)"
+      }
+    },
+    "cases": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$caseId": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['id', 'firNumber', 'crimeType', 'status', 'victim', 'accused', 'incident'])"
+      }
+    },
+    "evidence": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$evidenceId": {
+        ".write": "auth != null"
+      }
+    },
+    "auditLogs": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      "$logId": {
+        ".write": "false"
+      }
+    },
+    "workflowEvents": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "notifications": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "diaryEntries": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "documents": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "legalSections": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "judgments": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "roles": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "userStates": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$userId": {
+        ".write": "auth != null"
+      }
+    }
+  }
+}

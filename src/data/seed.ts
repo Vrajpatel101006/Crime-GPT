@@ -417,10 +417,10 @@ export const SEED_AUDIT_LOGS = [
 
 /* ─── SAMPLE NOTIFICATIONS ─── */
 export const SEED_NOTIFICATIONS = [
-  { id: 'n-001', userId: 'io1', title: 'Case Review Required', message: 'Case CC-AHD-2026-0042 is pending your review.', timestamp: '2026-06-07T10:00:00Z', read: false, type: 'warning' as const },
-  { id: 'n-002', userId: 'io1', title: 'Evidence Integrity Verified', message: 'All evidence files for case-001 passed SHA-256 verification.', timestamp: '2026-06-06T15:00:00Z', read: false, type: 'success' as const },
-  { id: 'n-003', userId: 'io1', title: 'New Legal Suggestion', message: 'AI recommended additional BNS section 336 for case-001.', timestamp: '2026-06-06T10:30:00Z', read: true, type: 'info' as const },
-  { id: 'n-004', userId: 'io1', title: 'Case Approved', message: 'Case CC-AHD-2026-0038 has been approved by SHO.', timestamp: '2026-06-01T10:05:00Z', read: true, type: 'success' as const },
+  { id: 'n-001', userId: 'io1', title: 'Case Review Required', message: 'Case CC-AHD-2026-0042 is pending your review.', timestamp: '2026-06-07T10:00:00Z', read: false, type: 'warning' as const, delivered: false, deliveredAt: undefined, deliveryAttempts: 0 },
+  { id: 'n-002', userId: 'io1', title: 'Evidence Integrity Verified', message: 'All evidence files for case-001 passed SHA-256 verification.', timestamp: '2026-06-06T15:00:00Z', read: false, type: 'success' as const, delivered: false, deliveredAt: undefined, deliveryAttempts: 0 },
+  { id: 'n-003', userId: 'io1', title: 'New Legal Suggestion', message: 'AI recommended additional BNS section 336 for case-001.', timestamp: '2026-06-06T10:30:00Z', read: true, type: 'info' as const, delivered: false, deliveredAt: undefined, deliveryAttempts: 0 },
+  { id: 'n-004', userId: 'io1', title: 'Case Approved', message: 'Case CC-AHD-2026-0038 has been approved by SHO.', timestamp: '2026-06-01T10:05:00Z', read: true, type: 'success' as const, delivered: false, deliveredAt: undefined, deliveryAttempts: 0 },
 ];
 
 /* ─── SEED WORKFLOW EVENTS (Alert Center) ─── */

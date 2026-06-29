@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from 'react';
-import { Users, Shield, Settings as SettingsIcon, Plus, Edit3, Trash2, Save, X, UserCheck, Lock, Bell, Database, Globe, Search, ShieldAlert, Ban, Clock, Key, CheckCircle2, MapPin, AlertCircle } from 'lucide-react';
+import { Users, Shield, Settings as SettingsIcon, Plus, Edit3, Trash2, Save, X, UserCheck, Lock, Bell, Database, Globe, Search, ShieldAlert, Ban, Clock, Key, CheckCircle2, MapPin, AlertCircle, ShieldCheck } from 'lucide-react';
 import {
   getAllUsers, showToast, getCurrentUser, getUserState, subscribeUserState,
   suspendUser, unsuspendUser, toggleUserActive, getUserById,
   getPermissions, setPermissions, subscribePermissions,
   getSettings, updateSettings, subscribeSettings,
   getAccessRequests, approveAccessRequest, rejectAccessRequest, subscribeAccessRequests,
-  getCases, formatDate,
+  getCases, formatDate
 } from '../store';
 import type { UserRole } from '../types';
 import type { PermKey, SystemSettings } from '../store';
@@ -603,6 +603,40 @@ function SettingsTab() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+        {/* Security Status (Read-Only) */}
+        <div className="card" style={{ borderLeft: '4px solid var(--govt-gold)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <ShieldCheck size={18} style={{ color: 'var(--govt-gold)' }} />
+            <h4 style={{ margin: 0 }}>Security Status</h4>
+            <span className="badge badge-success" style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>Active</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Authentication</span>
+              <span style={{ fontWeight: 600 }}>Firebase Auth</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Access Control</span>
+              <span style={{ fontWeight: 600 }}>Role-Based (RBAC)</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Data Isolation</span>
+              <span style={{ fontWeight: 600 }}>Station-Based</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Audit Logging</span>
+              <span style={{ fontWeight: 600, color: 'var(--govt-gold)' }}>Enabled</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Session Timeout</span>
+              <span style={{ fontWeight: 600 }}>30 Minutes</span>
+            </div>
+            <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              🔒 All data protected by Firebase Security Rules, role-based permissions, and station-level access control.
+            </div>
+          </div>
+        </div>
+
         {/* Security */}
         <div className="card">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>

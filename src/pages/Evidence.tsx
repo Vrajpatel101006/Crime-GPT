@@ -8,9 +8,10 @@ import {
 import {
   getEvidence, addEvidence, getAccessibleCases,
   generateUniqueId, formatDateTime, showToast, getCurrentUser,
-  addDiaryEntry, hasPermission, addCustodyEntry
+  addDiaryEntry, hasPermission, addCustodyEntry, getSettings
 } from '../store';
 import type { Evidence, ExtractedEntity } from '../types';
+import { useTranslation } from '../hooks/useTranslation';
 
 const FILE_ICONS: Record<string, any> = {
   image: Image,
@@ -28,6 +29,7 @@ export default function EvidencePage() {
   const [filterType, setFilterType] = useState('all');
   const cases = getAccessibleCases();
   const accessibleCaseIds = new Set(cases.map(c => c.id));
+  const { t } = useTranslation();
 
   const refresh = useCallback(() => setEvidence(getEvidence()), []);
 
@@ -52,24 +54,24 @@ export default function EvidencePage() {
     <div className="fade-in">
       <div className="page-header">
         <div>
-          <h1><Shield size={28} style={{ color: 'var(--brand-primary-light)' }} /> Evidence Management</h1>
-          <p className="text-sm text-muted" style={{ marginTop: 4 }}>Upload, analyze, and manage evidence with integrity verification</p>
+          <h1><Shield size={28} style={{ color: 'var(--brand-primary-light)' }} /> {t('evidence.title')}</h1>
+          <p className="text-sm text-muted" style={{ marginTop: 4 }}>{t('evidence.description')}</p>
         </div>
         <div className="page-header-actions">
           <select className="form-select" style={{ width: 200 }} value={filterCase} onChange={e => setFilterCase(e.target.value)}>
-            <option value="all">All Cases</option>
+            <option value="all">{t('evidence.allCases')}</option>
             {cases.map(c => <option key={c.id} value={c.id}>{c.firNumber}</option>)}
           </select>
           <select className="form-select" style={{ width: 150 }} value={filterType} onChange={e => setFilterType(e.target.value)}>
-            <option value="all">All Types</option>
+            <option value="all">{t('evidence.allTypes')}</option>
             {fileTypes.map(ft => <option key={ft} value={ft}>{ft.charAt(0).toUpperCase() + ft.slice(1)}</option>)}
           </select>
           <div className="search-box">
             <Search className="search-icon" size={16} />
-            <input placeholder="Search filename, tag, hash..." value={search} onChange={e => setSearch(e.target.value.slice(0, 200))} maxLength={200} />
+            <input placeholder={t('evidence.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value.slice(0, 200))} maxLength={200} />
           </div>
-          <button className="btn btn-primary" onClick={() => setShowUpload(true)} disabled={!canUpload} title={!canUpload ? 'You do not have permission to upload evidence' : ''}>
-            <Upload size={16} /> Upload Evidence
+          <button className="btn btn-primary" onClick={() => setShowUpload(true)} disabled={!canUpload} title={!canUpload ? t('evidence.noUploadPermission') : ''}>
+            <Upload size={16} /> {t('evidence.uploadEvidence')}
           </button>
         </div>
       </div>
@@ -121,8 +123,8 @@ export default function EvidencePage() {
               {/* Extracted Entities Count */}
               {ev.extractedEntities.length > 0 && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                  {ev.extractedEntities.length} entities extracted
-                  <span style={{ fontSize: '0.65rem', color: 'var(--brand-warning)', marginLeft: 6 }}>⚠ AI-extracted — verify manually</span>
+                  {ev.extractedEntities.length} {t('evidence.entitiesExtracted')}
+                  <span style={{ fontSize: '0.65rem', color: 'var(--brand-warning)', marginLeft: 6 }}>{t('evidence.aiExtractedWarning')}</span>
                 </div>
               )}
             </div>
@@ -133,8 +135,8 @@ export default function EvidencePage() {
       {filtered.length === 0 && (
         <div className="empty-state" style={{ marginTop: 'var(--space-2xl)' }}>
           <Shield className="empty-state-icon" />
-          <h3>No evidence found</h3>
-          <p>Upload evidence files to start building your case.</p>
+          <h3>{t('evidence.noEvidenceFound')}</h3>
+          <p>{t('evidence.uploadEvidenceToStart')}</p>
         </div>
       )}
 
@@ -150,6 +152,29 @@ export default function EvidencePage() {
 /* ─── UPLOAD MODAL ─── */
 const MAX_FILE_SIZE_FOR_STORAGE = 2 * 1024 * 1024; // 2 MB — files above this stored as metadata only
 
+/**
+ * Filters an array of files against the configured maxFileSize.
+ * Shows a toast for each rejected file. Returns only files within the limit.
+ */
+function filterFilesByMaxSize(incoming: File[]): File[] {
+  const maxBytes = (getSettings().maxFileSize || 100) * 1024 * 1024;
+  const accepted: File[] = [];
+  const rejected: string[] = [];
+  for (const f of incoming) {
+    if (f.size > maxBytes) {
+      rejected.push(f.name);
+    } else {
+      accepted.push(f);
+    }
+  }
+  if (rejected.length > 0) {
+    const limitMB = Math.round(maxBytes / (1024 * 1024));
+    const names = rejected.length <= 3 ? rejected.join(', ') : `${rejected.length} files`;
+    showToast(`${names} exceeds the ${limitMB} MB upload limit`, 'error', 5000);
+  }
+  return accepted;
+}
+
 function UploadModal({ onClose }: { onClose: () => void }) {
   const user = getCurrentUser();
   const cases = getAccessibleCases();
@@ -158,17 +183,19 @@ function UploadModal({ onClose }: { onClose: () => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useTranslation();
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const dropped = Array.from(e.dataTransfer.files);
-    setFiles(prev => [...prev, ...dropped]);
+    const dropped = filterFilesByMaxSize(Array.from(e.dataTransfer.files));
+    if (dropped.length > 0) setFiles(prev => [...prev, ...dropped]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+      const selected = filterFilesByMaxSize(Array.from(e.target.files));
+      if (selected.length > 0) setFiles(prev => [...prev, ...selected]);
     }
   };
 
@@ -190,7 +217,7 @@ function UploadModal({ onClose }: { onClose: () => void }) {
 
   const processFiles = useCallback(async () => {
     if (!caseId || files.length === 0) {
-      showToast('Select a case and at least one file', 'warning');
+      showToast(t('evidence.selectCaseAndFiles'), 'warning');
       return;
     }
     setIsProcessing(true);
@@ -248,14 +275,14 @@ function UploadModal({ onClose }: { onClose: () => void }) {
         id: generateUniqueId(),
         caseId,
         timestamp: new Date().toISOString(),
-        action: 'Evidence Uploaded',
-        description: `${file.name} uploaded. SHA-256: ${hash.substring(0, 16)}... ${extractedEntities.length > 0 ? `${extractedEntities.length} entities extracted.` : ''}`,
+        action: t('evidence.evidenceUploaded'),
+        description: `${file.name} ${t('evidence.uploadedSHA256')}: ${hash.substring(0, 16)}... ${extractedEntities.length > 0 ? `${extractedEntities.length} ${t('evidence.entitiesExtracted')}.` : ''}`,
         performedBy: user.name,
         category: 'evidence',
       });
     }
 
-    showToast(`${files.length} file(s) uploaded with SHA-256 verification!`, 'success');
+    showToast(`${files.length} ${t('evidence.filesUploadedWithVerification')}`, 'success');
     setIsProcessing(false);
     onClose();
   }, [caseId, files, user, onClose]);
@@ -265,14 +292,14 @@ function UploadModal({ onClose }: { onClose: () => void }) {
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Upload size={20} style={{ color: 'var(--brand-primary-light)' }} /> Upload Evidence
+            <Upload size={20} style={{ color: 'var(--brand-primary-light)' }} /> {t('evidence.uploadEvidence')}
           </h3>
           <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="modal-body">
           <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
-            <label className="form-label">Case</label>
+            <label className="form-label">{t('evidence.case')}</label>
             <select className="form-select" value={caseId} onChange={e => setCaseId(e.target.value)}>
               {cases.map(c => <option key={c.id} value={c.id}>{c.firNumber} — {c.crimeType}</option>)}
             </select>
@@ -286,8 +313,8 @@ function UploadModal({ onClose }: { onClose: () => void }) {
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload className="upload-zone-icon" />
-            <h3 style={{ fontSize: '1rem', color: 'var(--text-primary)', marginBottom: 4 }}>Drop files here or click to browse</h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Images, PDFs, Audio, Video — Max 50MB per file</p>
+            <h3 style={{ fontSize: '1rem', color: 'var(--text-primary)', marginBottom: 4 }}>{t('evidence.dropFilesOrClick')}</h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('evidence.maxFileSizePerFile', { size: getSettings().maxFileSize })}</p>
             <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileSelect} accept="image/*,application/pdf,audio/*,video/*" />
           </div>
 
@@ -314,9 +341,9 @@ function UploadModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-secondary" onClick={onClose}>{t('action.cancel')}</button>
           <button className="btn btn-primary" onClick={processFiles} disabled={isProcessing || files.length === 0}>
-            {isProcessing ? 'Processing...' : `Upload ${files.length} File(s)`}
+            {isProcessing ? t('evidence.processing') : `${t('evidence.upload')} ${files.length} ${t('evidence.files')}`}
           </button>
         </div>
       </div>
@@ -328,6 +355,7 @@ function UploadModal({ onClose }: { onClose: () => void }) {
 function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; onClose: () => void }) {
   const [hashRevealed, setHashRevealed] = useState(false);
   const user = getCurrentUser();
+  const { t } = useTranslation();
 
   // Log 'viewed' custody entry on modal open (once per open)
   const viewedRef = useRef(false);
@@ -342,14 +370,14 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
 
   const handleCopyHash = () => {
     navigator.clipboard.writeText(ev.sha256Hash);
-    showToast('SHA-256 hash copied to clipboard', 'success');
+    showToast(t('evidence.hashCopiedToClipboard'), 'success');
     setHashRevealed(true);
     setTimeout(() => setHashRevealed(false), 10000);
   };
 
   const handleDownload = () => {
     if (!ev.fileData) {
-      showToast('File content not stored — only metadata available', 'warning');
+      showToast(t('evidence.fileContentNotStored'), 'warning');
       return;
     }
     const link = document.createElement('a');
@@ -357,7 +385,7 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
     link.download = ev.fileName;
     link.click();
     addCustodyEntry(ev.id, { action: 'downloaded', userId: user.id, userName: user.name, timestamp: new Date().toISOString() });
-    showToast(`${ev.fileName} downloaded`, 'success');
+    showToast(`${ev.fileName} ${t('evidence.downloaded')}`, 'success');
   };
 
   return (
@@ -379,7 +407,7 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
           {/* File Preview */}
           {ev.fileData ? (
             <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
-              <div className="card-title" style={{ marginBottom: 8 }}>File Preview</div>
+              <div className="card-title" style={{ marginBottom: 8 }}>{t('evidence.filePreview')}</div>
               {ev.fileType === 'image' && (
                 <img src={ev.fileData} alt={ev.fileName} style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 'var(--radius-md)', objectFit: 'contain', background: 'var(--surface-0)' }} />
               )}
@@ -395,14 +423,14 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
               {ev.fileType === 'document' && ev.mimeType !== 'application/pdf' && (
                 <div style={{ padding: 16, background: 'var(--surface-0)', borderRadius: 'var(--radius-md)', textAlign: 'center', color: 'var(--text-muted)' }}>
                   <FileText size={32} style={{ marginBottom: 8 }} />
-                  <div>Preview not available for {ev.mimeType}. Download to view.</div>
+                  <div>{t('evidence.previewNotAvailable')} {ev.mimeType}. {t('evidence.downloadToView')}</div>
                 </div>
               )}
             </div>
           ) : (
             <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)', textAlign: 'center', padding: 'var(--space-lg)' }}>
               <FileText size={32} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Preview unavailable — file {ev.fileSize > MAX_FILE_SIZE_FOR_STORAGE ? 'exceeds 2 MB storage limit' : 'content not stored'}</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('evidence.previewUnavailable')} — {t('evidence.file')} {ev.fileSize > MAX_FILE_SIZE_FOR_STORAGE ? t('evidence.exceedsStorageLimit') : t('evidence.contentNotStored')}</div>
             </div>
           )}
 
@@ -410,7 +438,7 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
           <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Hash size={16} style={{ color: 'var(--brand-success)' }} />
-              <span className="card-title">SHA-256 Integrity Hash</span>
+              <span className="card-title">{t('evidence.sha256IntegrityHash')}</span>
               <CheckCircle2 size={14} style={{ color: 'var(--brand-success)' }} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -431,15 +459,15 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
               </div>
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 6 }}>
-              ✓ File integrity verified — tamper-proof evidence record
-              {hashRevealed && <span style={{ color: 'var(--brand-warning)', marginLeft: 8 }}>Hash revealed — auto-hides in 10s</span>}
+              ✓ {t('evidence.fileIntegrityVerified')}
+              {hashRevealed && <span style={{ color: 'var(--brand-warning)', marginLeft: 8 }}>{t('evidence.hashRevealedAutoHides')}</span>}
             </div>
           </div>
 
           {/* Extracted Entities */}
           {ev.extractedEntities.length > 0 && (
             <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>Extracted Entities (OCR/AI)</div>
+              <div className="card-title" style={{ marginBottom: 12 }}>{t('evidence.extractedEntitiesOCRAI')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ev.extractedEntities.map((ent, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-2)' }}>
@@ -458,7 +486,7 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
 
           {/* Tags */}
           <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>Evidence Tags</div>
+            <div className="card-title" style={{ marginBottom: 12 }}>{t('evidence.evidenceTags')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {ev.tags.map((tag, i) => (
                 <span key={i} className="badge badge-primary" style={{ padding: '6px 14px' }}>
@@ -471,7 +499,7 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
           {/* Chain of Custody */}
           <div className="card" style={{ background: 'var(--surface-1)' }}>
             <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Link2 size={16} style={{ color: 'var(--brand-accent)' }} /> Chain of Custody ({ev.chainOfCustody.length} entries)
+              <Link2 size={16} style={{ color: 'var(--brand-accent)' }} /> {t('evidence.chainOfCustody')} ({ev.chainOfCustody.length} {ev.chainOfCustody.length !== 1 ? t('evidence.entries') : t('evidence.entry')})
             </div>
             <div className="timeline">
               {ev.chainOfCustody.map((entry, i) => (
@@ -491,10 +519,10 @@ function EvidenceDetailModal({ evidence: ev, onClose }: { evidence: Evidence; on
         </div>
 
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={handleDownload} disabled={!ev.fileData} title={!ev.fileData ? 'File content not stored' : `Download ${ev.fileName}`}>
-            <Download size={16} /> Download
+          <button className="btn btn-secondary" onClick={handleDownload} disabled={!ev.fileData} title={!ev.fileData ? t('evidence.fileContentNotStored') : `${t('evidence.download')} ${ev.fileName}`}>
+            <Download size={16} /> {t('evidence.download')}
           </button>
-          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+          <button className="btn btn-ghost" onClick={onClose}>{t('action.close')}</button>
         </div>
       </div>
     </div>
