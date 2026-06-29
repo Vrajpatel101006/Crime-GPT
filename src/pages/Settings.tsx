@@ -100,7 +100,7 @@ export default function Settings() {
   }, [prefs]);
 
   /* ── Digital Stamp Upload ── */
-  const [newStampFile, setNewStampFile] = useState<File | null>(null);
+  const [, setNewStampFile] = useState<File | null>(null);
   const [newStampName, setNewStampName] = useState('');
   const [newStampHasDate, setNewStampHasDate] = useState(false);
   const [newStampDataUrl, setNewStampDataUrl] = useState<string | null>(null);
