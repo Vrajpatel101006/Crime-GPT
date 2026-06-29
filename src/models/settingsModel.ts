@@ -28,6 +28,27 @@ export interface SystemSettings {
   firPrefix: string;
 }
 
+export interface NotificationSetting {
+  id: string;
+  type: 'system' | 'update' | 'alert';
+  message: string;
+  timestamp: string;
+  read: boolean;
+}
+
+export interface DigitalStamp {
+  id: string;
+  name: string;
+  url: string;
+  hasDate: boolean;
+  dateConfig?: {
+    x: number;
+    y: number;
+    fontSize: number;
+    fontFamily: string;
+  };
+}
+
 let _settings: SystemSettings = {
   autoSaveInterval: 5, sessionTimeout: 30, maxFileSize: 100,
   encryptionEnabled: true, offlineMode: true, autoBackup: true,
@@ -73,12 +94,17 @@ export interface UserPreferences {
   documentFormat: 'standard' | 'detailed';
   desktopNotifications: boolean;
   autoSaveDrafts: boolean;
+  stamps: DigitalStamp[];
 }
 
 const DEFAULT_USER_PREFS: UserPreferences = {
-  uiLanguage: 'en', documentLanguage: 'en',
-  paperSize: 'A4', documentFormat: 'standard',
-  desktopNotifications: true, autoSaveDrafts: true,
+  uiLanguage: 'en',
+  documentLanguage: 'en',
+  paperSize: 'A4',
+  documentFormat: 'standard',
+  desktopNotifications: false,
+  autoSaveDrafts: true,
+  stamps: [],
 };
 
 let _userPreferences: Record<string, UserPreferences> = {};

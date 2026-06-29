@@ -11,6 +11,7 @@
 import type { CaseRecord, DocumentType } from '../../types';
 import { getLegalSections } from '../../store';
 import { getDocTranslations, getLegalSectionTranslations, type DocFieldTranslations, type LegalSectionTranslations } from './docTranslations';
+import type { DigitalStamp } from '../../models/settingsModel';
 
 export interface GeneratedDocResult {
   content: string;
@@ -20,7 +21,8 @@ export interface GeneratedDocResult {
 export function generateDocContent(
   caseData: CaseRecord, 
   docType: DocumentType,
-  language: 'en' | 'gu' | 'hi' = 'en'
+  language: 'en' | 'gu' | 'hi' = 'en',
+  options?: { selectedStamp?: DigitalStamp }
 ): GeneratedDocResult {
   const errors: string[] = [];
   if (!caseData.firNumber) errors.push('FIR Number is missing');
@@ -97,6 +99,30 @@ export function generateDocContent(
 
     default:
       content = generateDefault(caseData, today);
+  }
+
+  if (options?.selectedStamp) {
+    let stampHtml = '';
+    if (options.selectedStamp.hasDate) {
+      const stampDate = new Date().toLocaleDateString('en-IN');
+      const conf = options.selectedStamp.dateConfig || { x: 50, y: 50, fontSize: 14, fontFamily: 'monospace' };
+      const scaledFontSize = Math.max(6, Math.round(conf.fontSize * 0.35));
+      stampHtml = `
+        <div style="position: relative; display: inline-block; padding: 12px; background: transparent; text-align: center;">
+          <img src="${options.selectedStamp.url}" alt="${options.selectedStamp.name}" style="max-height: 100px; max-width: 150px; opacity: 0.8; mix-blend-mode: multiply;" />
+          <div style="position: absolute; top: ${conf.y}%; left: ${conf.x}%; transform: translate(-50%, -50%); color: #000; font-weight: bold; font-family: ${conf.fontFamily}; font-size: ${scaledFontSize}px; opacity: 0.8; mix-blend-mode: multiply; text-align: center; white-space: nowrap;">
+            ${stampDate}
+          </div>
+        </div>
+      `;
+    } else {
+      stampHtml = `<img src="${options.selectedStamp.url}" alt="${options.selectedStamp.name}" style="max-height: 80px; max-width: 150px; opacity: 0.8; mix-blend-mode: multiply;" />`;
+    }
+    content = content.replace(/\[Official Stamp\]/g, stampHtml);
+    content = content.replace(/\[Police Station Seal\/Stamp\]/g, stampHtml);
+  } else {
+    content = content.replace(/\[Official Stamp\]/g, '');
+    content = content.replace(/\[Police Station Seal\/Stamp\]/g, '');
   }
 
   // Document content generated without AI disclaimer
@@ -198,7 +224,7 @@ function generateFIR(
   ${t.footers.map(f => `<div class="doc-sig-block"><div class="doc-sig-line">${f}</div></div>`).join('')}
 </div>
 
-<div style="margin-top:24px;padding:16px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;">
+<div style="margin-top:24px;padding:0px;background:transparent;border:none;">
   <strong>${t.fields.policeStation} ${t.labels.description}:</strong><br><br>
   [Official Stamp]<br><br>
   ${t.labels.date}: ${today}
@@ -1457,7 +1483,7 @@ function generateLERSRequest(
   </div>
 </div>
 
-<div style="margin-top:24px;padding:16px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;">
+<div style="margin-top:24px;padding:0px;background:transparent;border:none;">
   <strong>Official Seal:</strong><br><br>
   [Police Station Seal/Stamp]<br><br>
   Date: ${today}

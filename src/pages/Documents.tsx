@@ -148,6 +148,7 @@ function GenerateModal({ caseData, defaultDocType, onClose, t }: { caseData: Cas
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'gu' | 'hi'>(
     getUserPreferences().documentLanguage
   );
+  const [selectedStampId, setSelectedStampId] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState<{ content: string; errors: string[] } | null>(null);
 
@@ -161,11 +162,14 @@ function GenerateModal({ caseData, defaultDocType, onClose, t }: { caseData: Cas
   const handleGenerate = useCallback(() => {
     setIsGenerating(true);
     setTimeout(() => {
-      const result = generateDocContent(caseData, docType, selectedLanguage);
+      const selectedStamp = (getUserPreferences().stamps || []).find(s => s.id === selectedStampId);
+      const result = generateDocContent(caseData, docType, selectedLanguage, {
+        selectedStamp
+      });
       setGenerated(result);
       setIsGenerating(false);
     }, 1200);
-  }, [caseData, docType, selectedLanguage]);
+  }, [caseData, docType, selectedLanguage, selectedStampId]);
 
   const handleSave = useCallback(() => {
     if (!generated) return;
@@ -233,6 +237,22 @@ function GenerateModal({ caseData, defaultDocType, onClose, t }: { caseData: Cas
                 </small>
               </div>
 
+              {(getUserPreferences().stamps || []).length > 0 && (
+                <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
+                  <label className="form-label">Select Digital Stamp</label>
+                  <select 
+                    className="form-select" 
+                    value={selectedStampId} 
+                    onChange={e => setSelectedStampId(e.target.value)}
+                  >
+                    <option value="">-- No Stamp --</option>
+                    {(getUserPreferences().stamps || []).map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="card" style={{ background: 'var(--surface-1)', marginBottom: 'var(--space-md)' }}>
                 <div className="card-title" style={{ marginBottom: 8 }}>Case Data Summary</div>
                 <div style={{ fontSize: '0.82rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -280,6 +300,67 @@ function GenerateModal({ caseData, defaultDocType, onClose, t }: { caseData: Cas
 }
 
 function PreviewModal({ doc, onClose }: { doc: GeneratedDocument; onClose: () => void; t: (key: string, params?: Record<string, string | number>) => string }) {
+  const handlePrint = () => {
+    const printWindow = window.open('', '', 'width=800,height=900');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${doc.title}</title>
+          <style>
+            body { font-family: "Times New Roman", Times, serif; line-height: 1.5; color: #000; padding: 40px; }
+            .doc-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 20px; }
+            .doc-emblem { font-weight: bold; font-size: 16px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+            .doc-title { font-weight: bold; font-size: 22px; text-decoration: underline; margin-bottom: 4px; }
+            .doc-subtitle { font-size: 14px; color: #333; }
+            .doc-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 30px; }
+            .doc-field { font-weight: bold; }
+            .doc-section { margin-bottom: 25px; }
+            .doc-section-title { font-weight: bold; font-size: 14px; text-decoration: underline; text-transform: uppercase; margin-bottom: 12px; }
+            .doc-fields { display: grid; grid-template-columns: 200px 1fr; gap: 8px 16px; margin: 0; }
+            .doc-fields dt { font-weight: bold; }
+            .doc-fields dd { margin: 0; }
+            .doc-narrative { text-align: justify; white-space: pre-wrap; margin-top: 10px; }
+            .doc-numbered { margin: 10px 0 10px 20px; padding: 0; list-style-type: decimal; }
+            .doc-numbered li { margin-bottom: 5px; }
+            .doc-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
+            .doc-sig-block { text-align: center; }
+            .doc-sig-line { border-top: 1px solid #000; padding-top: 8px; margin-top: 60px; font-weight: bold; }
+            .doc-note { text-align: center; font-size: 10px; color: #666; margin-top: 40px; border-top: 1px solid #ccc; padding-top: 10px; }
+            .doc-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+            .doc-table th, .doc-table td { border: 1px solid #000; padding: 8px; text-align: left; }
+            @media print {
+              body { padding: 0; }
+              button { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          ${doc.content || ''}
+          <script>
+            window.onload = () => {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleExportDocx = () => {
+    const preHtml = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export HTML To Doc</title></head><body>";
+    const postHtml = "</body></html>";
+    const htmlStr = preHtml + (doc.content || '') + postHtml;
+    const blob = new Blob(['\ufeff', htmlStr], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${doc.title.replace(/\s+/g, '_')}.doc`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
@@ -297,13 +378,13 @@ function PreviewModal({ doc, onClose }: { doc: GeneratedDocument; onClose: () =>
           <div className="doc-preview" dangerouslySetInnerHTML={{ __html: doc.content || '<p>[Document content — Generated from case data using verified templates]</p>' }} />
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={() => showToast('PDF export simulated', 'info')}>
+          <button className="btn btn-secondary" onClick={handlePrint}>
             <Download size={16} /> Export PDF
           </button>
-          <button className="btn btn-secondary" onClick={() => showToast('DOCX export simulated', 'info')}>
+          <button className="btn btn-secondary" onClick={handleExportDocx}>
             <Download size={16} /> Export DOCX
           </button>
-          <button className="btn btn-ghost" onClick={() => showToast('Print dialog simulated', 'info')}>
+          <button className="btn btn-ghost" onClick={handlePrint}>
             <Printer size={16} /> Print
           </button>
         </div>

@@ -1535,7 +1535,7 @@ a:hover { color: var(--brand-accent-light); }
 }
 
 .doc-preview .doc-numbered li::before {
-  content: counter(doc-numbered) '.';
+  content: counter(doc-counter) '.';
   font-weight: 700;
   margin-right: 6px;
 }

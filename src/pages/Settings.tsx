@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   User, Globe, FileText, Bell, Save, ShieldCheck,
 } from 'lucide-react';
@@ -99,6 +99,75 @@ export default function Settings() {
     showToast(t('settings.preferencesSaved'), 'success');
   }, [prefs]);
 
+  /* ── Digital Stamp Upload ── */
+  const [newStampFile, setNewStampFile] = useState<File | null>(null);
+  const [newStampName, setNewStampName] = useState('');
+  const [newStampHasDate, setNewStampHasDate] = useState(false);
+  const [newStampDataUrl, setNewStampDataUrl] = useState<string | null>(null);
+
+  const [dateX, setDateX] = useState(50);
+  const [dateY, setDateY] = useState(50);
+  const [fontSize, setFontSize] = useState(10);
+  const [fontFamily, setFontFamily] = useState('monospace');
+  
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    handlePointerMove(e);
+  };
+  const handlePointerUp = () => setIsDragging(false);
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging && e.type !== 'pointerdown') return;
+    if (!previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+    setDateX(Math.round(x));
+    setDateY(Math.round(y));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setNewStampFile(file || null);
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => setNewStampDataUrl(event.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setNewStampDataUrl(null);
+    }
+  };
+
+  const handleAddStamp = useCallback(() => {
+    if (!newStampDataUrl || !newStampName.trim()) return;
+    const newStamp = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: newStampName,
+      url: newStampDataUrl,
+      hasDate: newStampHasDate,
+      dateConfig: newStampHasDate ? {
+        x: dateX, y: dateY, fontSize, fontFamily
+      } : undefined
+    };
+    updatePref('stamps', [...(prefs.stamps || []), newStamp]);
+    setNewStampFile(null);
+    setNewStampDataUrl(null);
+    setNewStampName('');
+    setNewStampHasDate(false);
+    setDateX(50);
+    setDateY(50);
+    setFontSize(10);
+    setFontFamily('monospace');
+    showToast('Stamp added successfully (Click Save to apply)', 'success');
+  }, [newStampDataUrl, newStampName, newStampHasDate, dateX, dateY, fontSize, fontFamily, prefs.stamps, updatePref]);
+
+  const removeStamp = (id: string) => {
+    updatePref('stamps', (prefs.stamps || []).filter(s => s.id !== id));
+  };
 
   const pushPerm = pushSupported ? getNotificationPermission() : 'denied';
 
@@ -264,6 +333,91 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* ── Digital Stamps Card ── */}
+        <div className="card settings-card">
+          <div className="settings-card-header">
+            <FileText size={18} style={{ color: '#8b5cf6' }} />
+            <h4>Digital Stamp Configuration</h4>
+          </div>
+          <p className="text-muted" style={{ fontSize: '0.82rem', margin: '0 0 12px' }}>
+            Upload multiple stamps (e.g. Station Round Seal, Signature). These can be applied dynamically to documents.
+          </p>
+          
+          <div style={{ background: 'var(--surface-1)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-md)' }}>
+            <h5 style={{ margin: '0 0 12px 0', fontSize: '0.9rem' }}>Add New Stamp</h5>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <input 
+                type="text" 
+                placeholder="Stamp Name (e.g. Round Seal)" 
+                value={newStampName}
+                onChange={e => setNewStampName(e.target.value)}
+                className="form-input"
+              />
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={handleFileChange}
+                className="form-input"
+              />
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={newStampHasDate}
+                  onChange={e => setNewStampHasDate(e.target.checked)}
+                />
+                <span className="toggle-slider" />
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Auto-overlay current date on this stamp
+                </span>
+              </label>
+
+              {newStampHasDate && newStampDataUrl && (
+                <div style={{ marginTop: '8px' }}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setIsConfigModalOpen(true)}>
+                    Configure Date Placement
+                  </button>
+                </div>
+              )}
+
+              <button 
+                className="btn btn-primary btn-sm" 
+                disabled={!newStampDataUrl || !newStampName.trim()} 
+                onClick={handleAddStamp}
+              >
+                Add Stamp
+              </button>
+            </div>
+          </div>
+
+          {(prefs.stamps || []).length > 0 && (
+            <div>
+              <h5 style={{ margin: '0 0 12px 0', fontSize: '0.9rem' }}>Your Stamps</h5>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+                {(prefs.stamps || []).map(stamp => (
+                  <div key={stamp.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-sm)', textAlign: 'center' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 8 }}>{stamp.name}</div>
+                    
+                    <div style={{ position: 'relative', display: 'inline-block', padding: 8, background: '#f8fafc', borderRadius: 4, marginBottom: 8 }}>
+                      <img src={stamp.url} style={{ maxHeight: 60, maxWidth: '100%', opacity: 0.8, mixBlendMode: 'multiply' }} alt={stamp.name} />
+                      {stamp.hasDate && (
+                        <div style={{ position: 'absolute', top: stamp.dateConfig ? `${stamp.dateConfig.y}%` : '50%', left: stamp.dateConfig ? `${stamp.dateConfig.x}%` : '50%', transform: 'translate(-50%, -50%)', color: '#000', fontWeight: 'bold', fontFamily: stamp.dateConfig?.fontFamily || 'monospace', fontSize: stamp.dateConfig ? `${stamp.dateConfig.fontSize}px` : '10px', opacity: 0.8, mixBlendMode: 'multiply', whiteSpace: 'nowrap' }}>
+                          {new Date().toLocaleDateString('en-IN')}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <button className="btn btn-ghost btn-sm" onClick={() => removeStamp(stamp.id)} style={{ color: 'var(--brand-danger)', width: '100%' }}>
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* ── Notifications Card ── */}
         <div className="card settings-card">
           <div className="settings-card-header">
@@ -322,6 +476,68 @@ export default function Settings() {
           <Save size={16} /> {t('settings.savePreferences')}
         </button>
       </div>
+
+      {/* ── Date Config Modal ── */}
+      {isConfigModalOpen && newStampDataUrl && (
+        <div className="modal-overlay" onPointerUp={handlePointerUp} onPointerMove={handlePointerMove}>
+          <div className="modal modal-lg" onClick={e => e.stopPropagation()} style={{ width: '800px', maxWidth: '90vw' }}>
+            <div className="modal-header">
+              <h3>Configure Date Placement</h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setIsConfigModalOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '24px' }}>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p className="text-muted" style={{ fontSize: '0.85rem', margin: 0 }}>
+                  Drag the date directly on the image to position it perfectly within your stamp.
+                </p>
+                <div>
+                  <label style={{ fontSize: '0.8rem', display: 'block', marginBottom: '4px' }}>Font Size ({fontSize}px)</label>
+                  <input type="range" min="6" max="36" value={fontSize} onChange={e => setFontSize(parseInt(e.target.value))} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', display: 'block', marginBottom: '4px' }}>Font Style</label>
+                  <select className="form-select" value={fontFamily} onChange={e => setFontFamily(e.target.value)} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                    <option value="monospace">Monospace</option>
+                    <option value="sans-serif">Sans-Serif</option>
+                    <option value="serif">Serif</option>
+                    <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                    <option value="'Courier New', Courier, monospace">Courier New</option>
+                    <option value="'Georgia', serif">Georgia</option>
+                    <option value="'Arial', Helvetica, sans-serif">Arial</option>
+                    <option value="'Verdana', Geneva, sans-serif">Verdana</option>
+                    <option value="'Brush Script MT', cursive">Handwritten (Brush Script)</option>
+                    <option value="'Comic Sans MS', cursive, sans-serif">Handwritten (Comic Sans)</option>
+                  </select>
+                </div>
+                <div style={{ marginTop: 'auto', background: 'var(--surface-1)', padding: '12px', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Current Position:</div>
+                  <div style={{ fontWeight: 600 }}>X: {dateX}% &nbsp;|&nbsp; Y: {dateY}%</div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', minHeight: '300px', overflow: 'hidden' }}>
+                <div 
+                  ref={previewRef}
+                  onPointerDown={handlePointerDown}
+                  style={{ position: 'relative', display: 'inline-block', cursor: isDragging ? 'grabbing' : 'grab', userSelect: 'none', touchAction: 'none' }}
+                >
+                  <img src={newStampDataUrl} style={{ maxHeight: '400px', maxWidth: '100%', opacity: 0.8, mixBlendMode: 'multiply', pointerEvents: 'none' }} alt="Preview" draggable={false} />
+                  <div style={{ position: 'absolute', top: `${dateY}%`, left: `${dateX}%`, transform: 'translate(-50%, -50%)', color: '#000', fontWeight: 'bold', fontFamily: fontFamily, fontSize: `${fontSize}px`, opacity: 0.8, mixBlendMode: 'multiply', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+                    {new Date().toLocaleDateString('en-IN')}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setIsConfigModalOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
